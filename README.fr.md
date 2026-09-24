@@ -114,6 +114,7 @@ Un nouveau token n'est enregistré que si la connexion à Plex réussit avec lui
 | `NOTIFY_URLS` | Webhooks pour `--notify`, séparés par des virgules (facultatif) | voir [Notifications](#notifications) |
 | `PLEX_LOGS_DIR` | Dossier des logs (facultatif) | `logs/` à côté du script (par défaut) |
 | `PLEX_OCR_CACHE` | Cache des lectures OCR (facultatif) | `.cache-ocr.json` à côté du script (par défaut) |
+| `PLEX_LOGS_KEEP` | Nombre de dossiers de simulation gardés ; les plus anciens sont supprimés, ceux des applications (avec `undo.json`) sont toujours gardés (facultatif) | `100` (par défaut) |
 
 Une variable d'environnement définie au lancement a priorité sur `config.env`, par exemple pour traiter une seule bibliothèque :
 
@@ -138,7 +139,7 @@ Les adresses des webhooks ne sont jamais recopiées dans les logs.
 
 ### Analyse automatique
 
-Si tu l'as activée dans l'assistant, cron lance régulièrement une **simulation** avec la page de contrôle et les notifications (`--html --notify --quiet`). **Rien n'est jamais appliqué automatiquement** : quand des titres sont à valider, tu reçois une notification, tu contrôles la page, puis tu lances l'application avec `--choices`. La sortie de chaque lancement automatique est ajoutée à `logs/cron.log`.
+Si tu l'as activée dans l'assistant, cron lance régulièrement une **simulation** avec la page de contrôle et les notifications (`--html --notify --quiet`). **Rien n'est jamais appliqué automatiquement** : quand des titres sont à valider, tu reçois une notification, tu contrôles la page, puis tu lances l'application avec `--choices`. La sortie de chaque lancement automatique est ajoutée à `logs/cron.log` (limité à 5 Mo).
 
 L'assistant gère une seule ligne de ta crontab, marquée `# plex-smart-logo-updater`, et ne touche pas aux autres.
 

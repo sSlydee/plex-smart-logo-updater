@@ -112,6 +112,7 @@ A new token is only saved if the connection to Plex succeeds with it.
 | `NOTIFY_URLS` | Webhooks for `--notify`, comma-separated (optional) | see [Notifications](#notifications) |
 | `PLEX_LOGS_DIR` | Logs folder (optional) | `logs/` next to the script (default) |
 | `PLEX_OCR_CACHE` | OCR cache (optional) | `.cache-ocr.json` next to the script (default) |
+| `PLEX_LOGS_KEEP` | Dry-run log folders to keep; older ones are deleted, apply folders (with `undo.json`) are always kept (optional) | `100` (default) |
 
 An environment variable set at launch takes precedence over `config.env`, for example to process a single library:
 
@@ -136,7 +137,7 @@ Webhook addresses are never written to the logs.
 
 ### Automatic run
 
-If you enabled it in the wizard, cron regularly runs a **dry run** with the review page and notifications (`--html --notify --quiet`). **Nothing is ever applied automatically**: when titles need review, you get a notification, you check the page, then you apply with `--choices`. The output of each automatic run is appended to `logs/cron.log`.
+If you enabled it in the wizard, cron regularly runs a **dry run** with the review page and notifications (`--html --notify --quiet`). **Nothing is ever applied automatically**: when titles need review, you get a notification, you check the page, then you apply with `--choices`. The output of each automatic run is appended to `logs/cron.log` (kept under 5 MB).
 
 The wizard manages a single line of your crontab, tagged `# plex-smart-logo-updater`, and leaves the others alone.
 

@@ -23,6 +23,7 @@ or in environment variables, which take precedence:
   PLEX_LANGUAGES  preference order, default: "fr-FR,en-US"
   PLEX_LOGS_DIR   logs folder, default: logs/ next to the script
   PLEX_OCR_CACHE  OCR cache, default: .cache-ocr.json next to the script
+  PLEX_LOGS_KEEP  dry-run log folders to keep, default: 100 (apply folders are always kept)
   NOTIFY_URLS     webhooks for --notify: Discord, Bark or generic (see notify.py)
 
 See --help for the options.
@@ -75,6 +76,8 @@ TARGET_LIBRARIES = [s.strip() for s in os.environ.get("PLEX_LIBRARIES", "Movies,
 LANGUAGES = [s.strip() for s in os.environ.get("PLEX_LANGUAGES", "fr-FR,en-US").split(",")]
 LOGS_DIR = os.environ.get("PLEX_LOGS_DIR", os.path.join(HERE, "logs"))
 OCR_CACHE_PATH = os.environ.get("PLEX_OCR_CACHE", os.path.join(HERE, ".cache-ocr.json"))
+LOGS_KEEP = int(os.environ.get("PLEX_LOGS_KEEP", "100"))
+CRON_LOG_MAX_BYTES = 5 * 1024 * 1024
 # DISCORD_WEBHOOK is still accepted for backward compatibility
 NOTIFY_TARGETS = notifier.parse_targets(
     " ".join(filter(None, [os.environ.get("NOTIFY_URLS", ""), os.environ.get("DISCORD_WEBHOOK", "")])))
@@ -839,6 +842,36 @@ class Context:
         self.html = None
 
 
+def prune_logs():
+    """
+    Deletes the oldest dry-run log folders beyond LOGS_KEEP. Folders holding an
+    undo journal (apply runs) are always kept. cron.log is trimmed to its most
+    recent part when it grows beyond CRON_LOG_MAX_BYTES.
+    """
+    import shutil
+    try:
+        names = sorted(os.listdir(LOGS_DIR))
+    except OSError:
+        return
+    dry_runs = [n for n in names
+                if os.path.isdir(os.path.join(LOGS_DIR, n))
+                and n.endswith(("_simulation", "_undo-simulation"))
+                and not any(os.path.exists(os.path.join(LOGS_DIR, n, f)) for f in ("undo.json", "annulation.json"))]
+    for name in dry_runs[:max(0, len(dry_runs) - LOGS_KEEP)]:
+        shutil.rmtree(os.path.join(LOGS_DIR, name), ignore_errors=True)
+
+    cron_log = os.path.join(LOGS_DIR, "cron.log")
+    try:
+        if os.path.getsize(cron_log) > CRON_LOG_MAX_BYTES:
+            with open(cron_log, "rb") as f:
+                f.seek(-CRON_LOG_MAX_BYTES // 2, os.SEEK_END)
+                tail = f.read()
+            with open(cron_log, "wb") as f:
+                f.write(tail[tail.find(b"\n") + 1:])
+    except OSError:
+        pass
+
+
 def run(opts):
     start = time.time()
     mode = "application" if opts.apply else "simulation"
@@ -846,6 +879,7 @@ def run(opts):
 
     run_dir = os.path.join(LOGS_DIR, time.strftime("%Y-%m-%d_%Hh%Mm%S") + "_" + mode)
     os.makedirs(run_dir, exist_ok=True)
+    prune_logs()
     summary = Log(os.path.join(run_dir, "_summary.txt"))
 
     ctx = Context()
