@@ -63,21 +63,134 @@ Les lectures OCR sont gardées dans un cache (`.cache-ocr.json`) : une relance n
 
 ## Installation
 
-Python 3.8 ou plus récent est nécessaire.
+Tu débutes avec GitHub ou la ligne de commande ? Ce guide pas à pas t'emmène de zéro jusqu'à ta première simulation. Compte une dizaine de minutes, surtout pour les téléchargements.
+
+### Ce qu'il te faut
+
+- **Une machine Linux qui accède à ton serveur Plex** : le serveur Plex lui-même, une seedbox, un NAS, un VPS… Testé sous Linux ; macOS devrait fonctionner ; sous Windows, utilise [WSL](https://learn.microsoft.com/fr-fr/windows/wsl/install).
+- **Python 3.8 ou plus récent** et **git**.
+- **Ton token Plex** ([comment le trouver](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)).
+- Environ **500 Mo d'espace libre** pour l'environnement Python (le moteur OCR en est la plus grosse partie).
+
+### Étape 1 — Ouvrir un terminal sur la machine
+
+Si la machine est distante (seedbox, NAS, VPS), connecte-toi en SSH depuis ton ordinateur : ouvre un terminal (PowerShell sous Windows, Terminal sous macOS/Linux) et tape :
 
 ```bash
+ssh ton_utilisateur@adresse_du_serveur
+```
+
+Vérifie ensuite que Python et git sont installés :
+
+```bash
+python3 --version
+git --version
+```
+
+Chaque commande doit afficher un numéro de version (Python doit être en 3.8 ou plus). S'il en manque un, installe-le avec le gestionnaire de paquets de ton système (par exemple `sudo apt install python3 python3-venv git` sous Debian/Ubuntu) ou demande à ton hébergeur.
+
+### Étape 2 — Télécharger le projet (« cloner » le dépôt)
+
+Place-toi dans le dossier où tu veux l'installer (ton dossier personnel convient très bien), puis clone le dépôt. Cloner télécharge le projet et garde le lien avec GitHub, ce qui permet de le mettre à jour plus tard en une commande.
+
+```bash
+cd ~
 git clone https://github.com/sSlydee/plex-smart-logo-updater.git
 cd plex-smart-logo-updater
+```
+
+Tu as maintenant un dossier `plex-smart-logo-updater` qui contient les scripts.
+
+### Étape 3 — Installer
+
+```bash
 ./install.sh
 ```
 
-`install.sh` crée un environnement Python dédié (`.venv`), installe les dépendances (`requirements.txt`), puis lance l'**assistant de configuration**.
+L'installateur crée un environnement Python dédié dans le dossier `.venv` (rien n'est installé sur le reste du système), télécharge les dépendances (quelques minutes), puis lance l'**assistant de configuration**.
 
 L'installateur remplace OpenCV 5, installé avec l'OCR, par une version plus ancienne : sur certaines machines, OpenCV 5 plante au chargement.
 
+### Étape 4 — Répondre à l'assistant
+
+L'assistant pose cinq questions (en anglais) ; appuie sur Entrée pour accepter la valeur affichée entre `[crochets]`.
+
+1. **Adresse du serveur Plex** : l'adresse **locale** du serveur, avec son port.
+   - Le script tourne sur le serveur Plex lui-même : `http://127.0.0.1:32400`.
+   - Plex tourne dans Docker sur la même machine : souvent `http://172.17.0.1:32400`.
+   - Une autre machine de ton réseau : `http://192.168.x.x:32400`.
+
+   Évite un nom de domaine public derrière un reverse proxy : le nombre de requêtes pourrait te faire bloquer par Fail2Ban ou CrowdSec.
+2. **Token Plex** : colle-le (rien ne s'affiche pendant que tu le colles, c'est normal). L'assistant teste la connexion tout de suite.
+3. **Bibliothèques** : tape les numéros des bibliothèques à traiter, séparés par des virgules (par exemple `1,3,4`), ou `all`.
+4. **Langue des logos** : garde `auto` (la langue de chaque bibliothèque, puis l'anglais), sauf raison particulière.
+5. **Notifications** et **analyse automatique** : facultatives, tu peux répondre `n` / `never` maintenant et y revenir plus tard (voir [Configuration](#configuration)).
+
+Tes réponses sont enregistrées dans `config.env`, lisible par toi seul.
+
+### Étape 5 — Première simulation
+
+```bash
+.venv/bin/python plex-smart-logo-updater.py --html
+```
+
+Rien n'est modifié dans Plex. Le premier lancement est plus long (environ 7 minutes pour 300 films), car il lit les logos ; les suivants utilisent un cache. À la fin, le résumé indique ce qui changerait et où se trouve la page de contrôle (`review.html`).
+
+Suis ensuite la [méthode recommandée](#méthode-recommandée--simulation-contrôle-application) pour contrôler et appliquer les changements.
+
+> Lance toujours le script avec `.venv/bin/python`, pas `python3` : les dépendances ne sont installées que dans `.venv`.
+
+### Récupérer les fichiers d'une machine distante
+
+Pour ouvrir `review.html` sur ton ordinateur et renvoyer `choices.json`, utilise un client SFTP avec la même adresse et les mêmes identifiants qu'en SSH :
+
+- **Windows** : [WinSCP](https://winscp.net/) ou [FileZilla](https://filezilla-project.org/)
+- **macOS** : [Cyberduck](https://cyberduck.io/) ou FileZilla
+- **Linux** : ton gestionnaire de fichiers (`sftp://ton_utilisateur@adresse_du_serveur`) ou FileZilla
+
+Ou depuis un terminal sur ton ordinateur :
+
+```bash
+scp ton_utilisateur@adresse_du_serveur:plex-smart-logo-updater/logs/<dossier>/review.html .
+scp choices.json ton_utilisateur@adresse_du_serveur:plex-smart-logo-updater/logs/<dossier>/
+```
+
+### Mettre à jour
+
+```bash
+cd ~/plex-smart-logo-updater
+git pull
+./install.sh --no-config
+```
+
+`git pull` télécharge la nouvelle version depuis GitHub ; `./install.sh --no-config` met à jour les dépendances sans reposer les questions de l'assistant. Ton `config.env`, tes logs et le cache sont conservés. Voir [CHANGELOG.md](CHANGELOG.md) pour les nouveautés.
+
+### Désinstaller
+
+```bash
+cd ~/plex-smart-logo-updater
+.venv/bin/python configure.py --cron     # choisir "never" pour retirer l'analyse automatique
+cd ~
+rm -rf plex-smart-logo-updater
+```
+
+Les logos déjà posés dans Plex restent en place. Pour remettre d'abord les anciens logos, utilise [`--undo`](#annuler-une-application) sur tes dossiers d'application.
+
+### Problèmes courants
+
+| Problème | Solution |
+|---|---|
+| `Permission denied` en lançant `./install.sh` | Lance plutôt `bash install.sh`. |
+| `Python 3.8 or later is required` | Installe un Python plus récent, ou lance `PYTHON=python3.11 ./install.sh` si plusieurs versions sont installées. |
+| `No module named ...` | Lance le script avec `.venv/bin/python`, pas `python3`. |
+| `Plex token rejected` | Ton token a changé : `.venv/bin/python configure.py --token`. |
+| `Cannot connect to the Plex server` | Vérifie l'adresse et le port ; depuis la machine, `curl http://adresse:32400/identity` doit répondre. |
+| `Libraries not found` | Les noms dans `PLEX_LIBRARIES` doivent correspondre exactement à Plex : `.venv/bin/python configure.py --libraries`. |
+| L'installateur s'arrête avec `The dependencies do not load correctly` | Supprime le dossier `.venv` et relance `./install.sh` ; si ça persiste, ouvre une issue avec la sortie complète. |
+
 ## Configuration
 
-L'assistant pose quelques questions (en anglais) et écrit `config.env` à côté du script :
+L'assistant de configuration (étape 4 ci-dessus) écrit `config.env` à côté du script. Il couvre :
 
 1. l'adresse du serveur Plex et ton token, avec un **test de connexion** ;
 2. les bibliothèques à traiter, choisies dans la **liste de ton serveur** ;
