@@ -231,6 +231,7 @@ Un nouveau token n'est enregistré que si la connexion à Plex réussit avec lui
 | `NOTIFY_URLS` | Webhooks pour `--notify`, séparés par des virgules (facultatif) | voir [Notifications](#notifications) |
 | `PLEX_LOGS_DIR` | Dossier des logs (facultatif) | `logs/` à côté du script (par défaut) |
 | `PLEX_OCR_CACHE` | Cache des lectures OCR (facultatif) | `.cache-ocr.json` à côté du script (par défaut) |
+| `PLEX_IGNORE_FILE` | Liste des titres ignorés (facultatif) | `ignored.json` à côté du script (par défaut) |
 | `PLEX_LOGS_KEEP` | Nombre de dossiers de simulation gardés ; les plus anciens sont supprimés, ceux des applications (avec `undo.json`) sont toujours gardés (facultatif) | `100` (par défaut) |
 
 Une variable d'environnement définie au lancement a priorité sur `config.env`, par exemple pour traiter une seule bibliothèque :
@@ -272,6 +273,9 @@ L'assistant gère une seule ligne de ta crontab, marquée `# plex-smart-logo-upd
 | `--notify` | Envoie un résumé aux webhooks de `NOTIFY_URLS` s'il y a quelque chose à faire |
 | `--quiet` | N'affiche que le résumé (le détail reste dans les logs) |
 | `--undo DOSSIER` | Annule une application (simulation, sauf avec `--apply`) |
+| `--ignore TITRE` | Ne plus jamais toucher à ce titre (voir [Titres ignorés](#titres-ignorés)) |
+| `--unignore TITRE` | Retire un titre de la liste des titres ignorés |
+| `--list-ignored` | Affiche la liste des titres ignorés |
 | `--replace` | Remplace aussi les logos posés par Plex s'ils diffèrent de sa recommandation actuelle |
 | `--replace --include-locked` | Remplace aussi les logos choisis à la main (à éviter) |
 
@@ -307,7 +311,23 @@ Le script crée `review.html` dans le dossier de logs de la simulation.
 .venv/bin/python plex-smart-logo-updater.py --apply --choices logs/<dossier de la simulation>/choices.json
 ```
 
-Seuls les changements validés sont appliqués. Un titre refusé est marqué `[REJECTED]`. Si le logo prévu a changé depuis la simulation, le titre est marqué `[RECHECK]` et n'est pas modifié.
+Seuls les changements validés sont appliqués. Un titre refusé est marqué `[REJECTED]` et ajouté aux [titres ignorés](#titres-ignorés). Si le logo prévu a changé depuis la simulation, le titre est marqué `[RECHECK]` et n'est pas modifié.
+
+### Titres ignorés
+
+Certains titres doivent rester tels quels : un changement que tu as refusé dans la page de contrôle, ou un logo que tu as retiré volontairement. Sans liste de titres ignorés, l'analyse hebdomadaire les reproposerait et te notifierait à chaque fois.
+
+- **Les refus sont retenus** : quand tu appliques avec `--choices`, chaque titre refusé est ajouté à la liste et n'est plus proposé.
+- **Ajouter un titre à la main** :
+
+  ```bash
+  .venv/bin/python plex-smart-logo-updater.py --ignore "Films/Edge of Tomorrow"
+  ```
+
+  Le titre peut s'écrire `Bibliothèque/Titre`, `Titre`, `Titre (année)` ou avec son ratingKey Plex. Si plusieurs titres correspondent, le script les liste pour que tu précises.
+- **Retirer un titre** avec `--unignore "Edge of Tomorrow"`, et afficher la liste avec `--list-ignored`.
+
+Les titres ignorés apparaissent dans les logs avec l'étiquette `[IGNORED]`. La liste est dans `ignored.json`, à côté du script (non publié).
 
 ### Annuler une application
 
@@ -352,6 +372,7 @@ Dans le détail, chaque titre se termine par une étiquette :
 | `[REJECTED]` | Avec `--choices` : refusé dans la page de contrôle |
 | `[RECHECK]` | Avec `--choices` : le logo prévu a changé depuis la simulation |
 | `[NOT REVIEWED]` | Avec `--choices` : titre absent du fichier de choix (nouveau depuis la simulation) |
+| `[IGNORED]` | Dans la liste des titres ignorés : ignoré |
 | `[ERROR]` | Erreur (le message est indiqué) |
 
 Mentions possibles après l'étiquette : `[FRENCH INFERRED]`, `[ORIGINAL TITLE]` et `[NOT VERIFIED]` (voir plus haut).
@@ -391,7 +412,7 @@ La première simulation est plus longue sur les bibliothèques de films (environ
 - Rien n'est supprimé : l'ancien logo reste disponible dans Plex (*Modifier > Logo*).
 - Seul le logo principal du film ou de la série est traité, pas ceux des saisons ou des épisodes.
 - Pour les titres marqués `[NONE]` ou `[CHECK]`, il faut choisir un logo à la main dans Plex ou en importer un.
-- `config.env`, les dossiers `logs/`, `.venv/` et le cache `.cache-ocr.json` ne sont pas à publier (voir `.gitignore`) : ils contiennent ton token ou la liste de tes titres.
+- `config.env`, `ignored.json`, les dossiers `logs/`, `.venv/` et le cache `.cache-ocr.json` ne sont pas à publier (voir `.gitignore`) : ils contiennent ton token ou la liste de tes titres.
 
 ## Tests
 

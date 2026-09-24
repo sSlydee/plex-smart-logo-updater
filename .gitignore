@@ -7,3 +7,5 @@ choices.json
 choix.json
 config.env
 .pytest_cache/
+ignored.json
+ignored.json.tmp

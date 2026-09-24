@@ -203,3 +203,38 @@ def test_languages_for(main, library_language, setting, expected):
 ])
 def test_quebec_detection_only_for_french_first(main, languages, checked):
     assert main.checks_quebec(languages) is checked
+
+
+# --- ignore list in a run --------------------------------------------------------
+
+class FakeItem:
+    def __init__(self, rating_key, title, year=None):
+        self.ratingKey, self.title, self.year = rating_key, title, year
+
+    def logos(self):
+        raise AssertionError("an ignored title must not be queried")
+
+
+class FakeSection:
+    title = "Films"
+
+    def __init__(self, items):
+        self._items = items
+
+    def all(self):
+        return self._items
+
+
+def test_ignored_titles_are_skipped_without_querying_plex(main, tmp_path):
+    import argparse
+    import ignorelist
+    ctx = main.Context()
+    ctx.ignored = ignorelist.IgnoreList(str(tmp_path / "ignored.json"))
+    ctx.ignored.add(7, "Films", "Edge of Tomorrow", 2014, ignorelist.REASON_REJECTED)
+    lines = []
+    opts = argparse.Namespace(apply=False, choices=None, replace=False, include_locked=False,
+                              fix_locked_quebec=False)
+    results = main.process_library(None, FakeSection([FakeItem(7, "Edge of Tomorrow", 2014)]),
+                                   lines.append, opts, ctx, ["fr-FR", "en-US"])
+    assert results["ignored"] == ["Edge of Tomorrow (2014)"]
+    assert any("[IGNORED]" in line for line in lines)

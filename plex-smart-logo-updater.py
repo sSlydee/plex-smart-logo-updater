@@ -25,6 +25,7 @@ or in environment variables, which take precedence:
   PLEX_LOGS_DIR   logs folder, default: logs/ next to the script
   PLEX_OCR_CACHE  OCR cache, default: .cache-ocr.json next to the script
   PLEX_LOGS_KEEP  dry-run log folders to keep, default: 100 (apply folders are always kept)
+  PLEX_IGNORE_FILE  ignore list, default: ignored.json next to the script
   NOTIFY_URLS     webhooks for --notify: Discord, Bark or generic (see notify.py)
 
 See --help for the options.
@@ -35,6 +36,7 @@ import collections
 import io
 import json
 import os
+import re
 import time
 import requests
 import urllib3
@@ -44,13 +46,14 @@ from PIL import Image, ImageChops
 from plexapi.server import PlexServer
 
 import envfile
+import ignorelist
 import quebec
 import html_report
 import notify as notifier
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -88,6 +91,7 @@ def checks_quebec(languages):
     return first.startswith("fr") and first != "fr-ca"
 LOGS_DIR = os.environ.get("PLEX_LOGS_DIR", os.path.join(HERE, "logs"))
 OCR_CACHE_PATH = os.environ.get("PLEX_OCR_CACHE", os.path.join(HERE, ".cache-ocr.json"))
+IGNORE_PATH = os.environ.get("PLEX_IGNORE_FILE", os.path.join(HERE, "ignored.json"))
 LOGS_KEEP = int(os.environ.get("PLEX_LOGS_KEEP", "100"))
 CRON_LOG_MAX_BYTES = 5 * 1024 * 1024
 # DISCORD_WEBHOOK is still accepted for backward compatibility
@@ -116,7 +120,9 @@ def parse_args():
                                            apply only what was approved in the review page
   plex-smart-logo-updater.py --apply                  apply everything
   plex-smart-logo-updater.py --undo logs/<application> [--apply]
-                                           undo an application (dry run without --apply)""")
+                                           undo an application (dry run without --apply)
+  plex-smart-logo-updater.py --ignore "Movies/Edge of Tomorrow"
+                                           never touch this title again (see --unignore)""")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     p.add_argument("--apply", action="store_true", help="actually change Plex (otherwise: dry run)")
     p.add_argument("--html", action="store_true",
@@ -134,6 +140,12 @@ def parse_args():
                    help="only print the summary (details stay in the logs): handy for cron")
     p.add_argument("--notify", action="store_true",
                    help="send a summary to the NOTIFY_URLS webhooks (Discord, Bark…) when there is something to do")
+    p.add_argument("--ignore", metavar="TITLE", action="append",
+                   help='never touch this title again: "Library/Title", "Title (year)" or a ratingKey '
+                        "(repeatable)")
+    p.add_argument("--unignore", metavar="TITLE", action="append",
+                   help="remove a title from the ignore list (repeatable)")
+    p.add_argument("--list-ignored", action="store_true", help="show the ignore list")
     p.add_argument("--undo", metavar="FOLDER",
                    help="undo the application recorded in this logs folder (undo.json)")
     return p.parse_args()
@@ -429,6 +441,7 @@ CATEGORIES = {
     "refused":    ("REJECTED",     "Skipped: rejected in the review page"),
     "unreviewed": ("NOT REVIEWED", "Skipped: missing from the choices file"),
     "changed":    ("RECHECK",      "Skipped: the planned logo changed since the dry run"),
+    "ignored":    ("IGNORED",      "Skipped: on the ignore list"),
     "error":      ("ERROR",        "Error"),
 }
 SIM_CATEGORIES = dict(CATEGORIES,
@@ -792,6 +805,10 @@ def process_library(plex, section, log, opts, ctx, languages):
         label = f"{item.title}{year}"
         log("")
         log(f"[{n}/{len(items)}] {label}")
+        if item.ratingKey in ctx.ignored:
+            status("ignored", f"on the ignore list ({ctx.ignored.get(item.ratingKey)['reason']})")
+            results["ignored"].append(label)
+            continue
         try:
             logos = item.logos()
             plan = plan_item(plex, item, logos, log, opts, languages)
@@ -815,7 +832,13 @@ def process_library(plex, section, log, opts, ctx, languages):
                     results["unreviewed"].append(label)
                     continue
                 if not decision.get("ok"):
-                    status("refused", plan.detail)
+                    detail = plan.detail
+                    if opts.apply:
+                        ctx.ignored.add(item.ratingKey, section.title, item.title, getattr(item, "year", None),
+                                        ignorelist.REASON_REJECTED)
+                        ctx.ignored.save()
+                        detail += " (added to the ignore list, see --unignore)"
+                    status("refused", detail)
                     results["refused"].append(label)
                     continue
                 if decision.get("target") != plan.target_id:
@@ -872,7 +895,7 @@ def write_library_summary(log, name, results, opts, duration):
     log(f"  Duration: {minutes(duration)}")
     log("")
     write_counts(log, results, cats)
-    for key in ("add", "replace", "check", "refused", "changed", "unreviewed", "none", "error"):
+    for key in ("add", "replace", "check", "refused", "changed", "unreviewed", "none", "ignored", "error"):
         if key in cats and results[key]:
             log("")
             log(f"  {cats[key][1]} ({len(results[key])}):")
@@ -891,6 +914,7 @@ class Context:
         self.journal = None
         self.choices = None
         self.html = None
+        self.ignored = None
 
 
 def prune_logs():
@@ -934,6 +958,7 @@ def run(opts):
     summary = Log(os.path.join(run_dir, "_summary.txt"))
 
     ctx = Context()
+    ctx.ignored = ignorelist.IgnoreList(IGNORE_PATH)
     if opts.choices:
         ctx.choices = load_choices(opts.choices)
     if opts.apply:
@@ -992,7 +1017,7 @@ def run(opts):
 
     # Per-library table
     cols = [("add", "Add"), ("replace", "Replace"), ("ok", "OK"), ("kept", "Kept"),
-            ("locked", "Locked"), ("none", "None"), ("check", "Check"), ("error", "Error")]
+            ("locked", "Locked"), ("none", "None"), ("check", "Check"), ("ignored", "Ignored"), ("error", "Error")]
     if opts.choices:
         cols[-1:-1] = [("refused", "Rejected"), ("changed", "Recheck"), ("unreviewed", "NoReview")]
     cols += [("inferred", "Inferred"), ("original", "Original"), ("unverified", "NotVerif")]
@@ -1014,7 +1039,7 @@ def run(opts):
     summary(LINE)
     write_counts(summary, totals, cats)
     # Details of the additions are in each library's file
-    for key in ("replace", "check", "refused", "changed", "unreviewed", "none", "error"):
+    for key in ("replace", "check", "refused", "changed", "unreviewed", "none", "ignored", "error"):
         if key in cats and totals[key]:
             summary("")
             summary(f"  {cats[key][1]} ({len(totals[key])}):")
@@ -1202,11 +1227,83 @@ def undo(opts):
     log.close()
 
 
+# ---------------------------------------------------------------------------
+# Ignore list
+# ---------------------------------------------------------------------------
+
+def find_titles(plex, spec):
+    """Plex titles matching "Library/Title", "Library > Title", "Title", "Title (year)" or a ratingKey."""
+    spec = spec.strip()
+    if spec.isdigit():
+        return [plex.fetchItem(int(spec))]
+    sections = [s for s in plex.library.sections() if s.type in ("movie", "show")]
+    library, title = ignorelist.split_spec(spec)
+    wanted = [s for s in sections if library is not None and s.title.casefold() == library.casefold()]
+    if library is not None and not wanted:
+        # No such library: the "/" belonged to the title (e.g. "Fate/Zero")
+        library, title = None, spec
+    if library is None:
+        wanted = [s for s in sections if s.title in TARGET_LIBRARIES] or sections
+    m = re.match(r"^(.*) \((\d{4})\)$", title)
+    search = m.group(1) if m else title
+    matches = []
+    for section in wanted:
+        for item in section.search(title=search):
+            if ignorelist.title_matches(title, item.title, getattr(item, "year", None)):
+                matches.append(item)
+    return matches
+
+
+def manage_ignore(opts):
+    ignored = ignorelist.IgnoreList(IGNORE_PATH)
+    changed = False
+    if opts.ignore:
+        plex = PlexServer(PLEX_URL, PLEX_TOKEN, session=HTTP)
+        for spec in opts.ignore:
+            matches = find_titles(plex, spec)
+            if not matches:
+                print(f'[!] "{spec}": no title found. Use "Library/Title", "Title (year)" or a ratingKey.')
+            elif len(matches) > 1:
+                print(f'[!] "{spec}" matches several titles, be more specific:')
+                for item in matches:
+                    year = f" ({item.year})" if getattr(item, "year", None) else ""
+                    print(f"      {item.librarySectionTitle}/{item.title}{year}   (ratingKey {item.ratingKey})")
+            else:
+                item = matches[0]
+                if ignored.add(item.ratingKey, item.librarySectionTitle, item.title, getattr(item, "year", None),
+                               ignorelist.REASON_MANUAL):
+                    changed = True
+                    print(f"  + ignored: {ignored.label(item.ratingKey)}")
+                else:
+                    print(f"  = already ignored: {ignored.label(item.ratingKey)}")
+    for spec in opts.unignore or []:
+        keys = ignored.find(spec)
+        if not keys:
+            print(f'[!] "{spec}" is not on the ignore list (see --list-ignored).')
+        elif len(keys) > 1:
+            print(f'[!] "{spec}" matches several ignored titles, use "Library/Title" or the ratingKey:')
+            for key in keys:
+                print(f"      {ignored.label(key)}   (ratingKey {key})")
+        else:
+            label = ignored.label(keys[0])
+            ignored.remove(keys[0])
+            changed = True
+            print(f"  - no longer ignored: {label}")
+    if changed:
+        ignored.save()
+    if opts.list_ignored or changed:
+        print(f"\nIgnore list ({len(ignored)} title(s), {IGNORE_PATH}):")
+        for key, v in sorted(ignored.titles.items(), key=lambda kv: ignored.label(kv[0]).casefold()):
+            print(f"  - {ignored.label(key)}   [{v['reason']}, {v['added']}, ratingKey {key}]")
+
+
 if __name__ == "__main__":
     options = parse_args()
     if options.include_locked and not options.replace:
         raise SystemExit("[!] --include-locked requires --replace.")
-    if options.undo:
+    if options.ignore or options.unignore or options.list_ignored:
+        manage_ignore(options)
+    elif options.undo:
         undo(options)
     else:
         run(options)

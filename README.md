@@ -229,6 +229,7 @@ A new token is only saved if the connection to Plex succeeds with it.
 | `NOTIFY_URLS` | Webhooks for `--notify`, comma-separated (optional) | see [Notifications](#notifications) |
 | `PLEX_LOGS_DIR` | Logs folder (optional) | `logs/` next to the script (default) |
 | `PLEX_OCR_CACHE` | OCR cache (optional) | `.cache-ocr.json` next to the script (default) |
+| `PLEX_IGNORE_FILE` | Ignore list (optional) | `ignored.json` next to the script (default) |
 | `PLEX_LOGS_KEEP` | Dry-run log folders to keep; older ones are deleted, apply folders (with `undo.json`) are always kept (optional) | `100` (default) |
 
 An environment variable set at launch takes precedence over `config.env`, for example to process a single library:
@@ -270,6 +271,9 @@ The wizard manages a single line of your crontab, tagged `# plex-smart-logo-upda
 | `--notify` | Send a summary to the `NOTIFY_URLS` webhooks when there is something to do |
 | `--quiet` | Only print the summary (details stay in the logs) |
 | `--undo FOLDER` | Undo an application (dry run unless `--apply` is given) |
+| `--ignore TITLE` | Never touch this title again (see [Ignore list](#ignore-list)) |
+| `--unignore TITLE` | Remove a title from the ignore list |
+| `--list-ignored` | Show the ignore list |
 | `--replace` | Also replace logos set by Plex that differ from its current recommendation |
 | `--replace --include-locked` | Also replace hand-picked logos (not recommended) |
 
@@ -305,7 +309,23 @@ The script writes `review.html` in the dry run's logs folder.
 .venv/bin/python plex-smart-logo-updater.py --apply --choices logs/<dry run folder>/choices.json
 ```
 
-Only the approved changes are applied. A rejected title is tagged `[REJECTED]`. If the planned logo changed since the dry run, the title is tagged `[RECHECK]` and left untouched.
+Only the approved changes are applied. A rejected title is tagged `[REJECTED]` and added to the [ignore list](#ignore-list). If the planned logo changed since the dry run, the title is tagged `[RECHECK]` and left untouched.
+
+### Ignore list
+
+Some titles should be left alone: a change you rejected in the review page, or a logo you removed on purpose. Without an ignore list, the weekly run would propose them again and notify you every time.
+
+- **Rejected changes are remembered**: when you apply with `--choices`, every title you rejected is added to the ignore list and is no longer proposed.
+- **Add a title by hand**:
+
+  ```bash
+  .venv/bin/python plex-smart-logo-updater.py --ignore "Movies/Edge of Tomorrow"
+  ```
+
+  The title can be given as `Library/Title`, `Title`, `Title (year)` or a Plex ratingKey. If several titles match, the script lists them so you can be more specific.
+- **Remove a title** with `--unignore "Edge of Tomorrow"`, and see the list with `--list-ignored`.
+
+Ignored titles appear in the logs with the `[IGNORED]` tag. The list lives in `ignored.json`, next to the script (not published).
 
 ### Undoing an application
 
@@ -350,6 +370,7 @@ In the details, each title ends with a tag:
 | `[REJECTED]` | With `--choices`: rejected in the review page |
 | `[RECHECK]` | With `--choices`: the planned logo changed since the dry run |
 | `[NOT REVIEWED]` | With `--choices`: title missing from the choices file (new since the dry run) |
+| `[IGNORED]` | On the ignore list: skipped |
 | `[ERROR]` | Error (the message is shown) |
 
 Possible mentions after the tag: `[FRENCH INFERRED]`, `[ORIGINAL TITLE]` and `[NOT VERIFIED]` (see above).
@@ -389,7 +410,7 @@ The first dry run is slower on movie libraries (about 7 minutes for 300 movies) 
 - Nothing is deleted: the old logo stays available in Plex (*Edit > Logo*).
 - Only the main movie/show logo is handled, not season or episode logos.
 - For titles tagged `[NONE]` or `[CHECK]`, pick or upload a logo by hand in Plex.
-- `config.env`, the `logs/` and `.venv/` folders and the `.cache-ocr.json` cache must not be published (see `.gitignore`): they contain your token or the list of your titles.
+- `config.env`, `ignored.json`, the `logs/` and `.venv/` folders and the `.cache-ocr.json` cache must not be published (see `.gitignore`): they contain your token or the list of your titles.
 
 ## Tests
 

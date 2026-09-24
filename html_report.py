@@ -182,7 +182,7 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
     document.body.style.paddingBottom = "16px";
   } else {
     steps.innerHTML = "<b>How to:</b><ol>" +
-      "<li>Look at each change. Everything is <b>approved</b> by default: click <b>Reject</b> on the ones you do not want. The filters help you start with the doubtful cases (<b>Not verified</b>).</li>" +
+      "<li>Look at each change. Everything is <b>approved</b> by default: click <b>Reject</b> on the ones you do not want: when you apply, rejected titles go to the ignore list and are not proposed again (<code>--unignore</code> to undo). The filters help you start with the doubtful cases (<b>Not verified</b>).</li>" +
       "<li>Click <b>Export choices.json</b> (at the bottom).</li>" +
       "<li>Copy <code>choices.json</code> to the server, into <code>logs/" + esc(DATA.simulation) + "/</code>.</li>" +
       "<li>Run: <code>plex-smart-logo-updater.py --apply --choices logs/" + esc(DATA.simulation) + "/choices.json</code></li></ol>" +
