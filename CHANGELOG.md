@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.2.1] - 2026-09-24
+
+### Fixed
+- A locked logo field **without** a logo (e.g. after removing a logo in Plex) was silently skipped; it now gets a proposal like any title without a logo. Rejecting it in the review page puts the title on the ignore list.
+- `--undo` restores the lock of a field that was locked and empty before the change.
+
 ## [1.2.0] - 2026-09-24
 
 ### Added
@@ -46,6 +52,7 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.2.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.2.1
 [1.2.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.2.0
 [1.1.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.1.0
 [1.0.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.0.0

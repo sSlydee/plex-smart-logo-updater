@@ -53,7 +53,7 @@ import notify as notifier
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -525,7 +525,8 @@ def write_header(log, title, opts, extra=(), languages=None):
     else:
         log(f"    1. Use the logo Plex recommends in {', otherwise in '.join(lang_name(l) for l in languages)}.")
     if not opts.replace:
-        log("    2. Only titles WITHOUT a logo are handled: an existing logo is kept.")
+        log("    2. Only titles WITHOUT a logo are handled (even if the field is locked);")
+        log("       an existing logo is kept.")
     elif opts.include_locked:
         log("    2. Existing logos may be replaced, including hand-picked ones.")
     else:
@@ -603,6 +604,20 @@ class Plan:
         return self.category in ("add", "replace")
 
 
+def keeps_locked_logo(plan, opts):
+    """
+    True when a locked (hand-picked) logo must be left alone. A locked field
+    WITHOUT a logo is not protected: a logo is proposed like for any title
+    without one, and rejecting it in the review page puts the title on the
+    ignore list.
+    """
+    if not plan.locked or plan.current is None:
+        return False
+    if opts.replace and opts.include_locked:
+        return False
+    return not (plan.current_is_qc and opts.fix_locked_quebec)
+
+
 def plan_item(plex, item, logos, log, opts, languages):
     """Inspects a title and decides what to do, without changing anything."""
     plan = Plan()
@@ -632,13 +647,15 @@ def plan_item(plex, item, logos, log, opts, languages):
         plan.current_is_qc = v == quebec.QC
         log(f"  Logo reads       : \"{text}\" -> {v}")
 
-    if plan.locked and not (opts.replace and opts.include_locked):
-        if not (plan.current_is_qc and opts.fix_locked_quebec):
-            plan.category = "locked"
-            plan.detail = "left untouched"
-            if plan.current_is_qc:
-                plan.detail += " (WARNING: this logo looks like a Quebec logo, see --fix-locked-quebec)"
-            return plan
+    if keeps_locked_logo(plan, opts):
+        plan.category = "locked"
+        plan.detail = "left untouched"
+        if plan.current_is_qc:
+            plan.detail += " (WARNING: this logo looks like a Quebec logo, see --fix-locked-quebec)"
+        return plan
+    if plan.locked and plan.current is None:
+        log("  Note             : the logo field is locked but empty: a logo is proposed "
+            "(reject it to keep the title without a logo)")
 
     if plan.current is not None and not opts.replace and not plan.current_is_qc:
         plan.category, plan.detail = "kept", "a logo is already set, left untouched"
@@ -1192,7 +1209,8 @@ def undo(opts):
                 what = "remove the logo (there was none)"
                 if opts.apply:
                     item.deleteLogo()
-                    item.unlockLogo()
+                    # Restore the lock state too (a field can be locked with no logo)
+                    item.lockLogo() if e.get("before_locked") else item.unlockLogo()
             else:
                 old = next((l for l in item.logos() if l.ratingKey == e["before"]), None)
                 if old is None:

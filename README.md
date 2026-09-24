@@ -26,7 +26,7 @@ By default each library uses **its own language** (as set in Plex), then English
 
 For every title in the selected libraries:
 
-1. **It never touches a hand-picked (locked) logo**, except with `--fix-locked-quebec` when it is a Quebec logo. It does not touch logos set by Plex either, **unless they are Quebec logos**.
+1. **It never touches a hand-picked (locked) logo**, except with `--fix-locked-quebec` when it is a Quebec logo. A locked field *without* a logo gets a proposal like any title without a logo: reject it in the review page to keep the title as it is (it then goes to the [ignore list](#ignore-list)). It does not touch logos set by Plex either, **unless they are Quebec logos**.
 2. **For titles without a logo, it asks Plex for the logo it recommends**, in the library's language first, then in English if there is none. This is exactly the logo Plex would have picked itself. The script queries Plex's metadata service (`metadata.provider.plex.tv`) with your Plex token; no TMDB key is needed.
 3. **It finds that logo among the ones your server offers** (same URL, or pixel-identical image) and selects it. It only uploads it from the Internet when it cannot find it.
 
@@ -336,7 +336,7 @@ Each application records the previous state in `undo.json`, in its logs folder. 
 .venv/bin/python plex-smart-logo-updater.py --undo logs/<application folder> --apply    # restore
 ```
 
-- A title that had no logo loses it again.
+- A title that had no logo loses it again (and gets its lock back if the field was locked).
 - A title that had a logo gets the old one back, with its original lock state.
 - A logo changed since the application (by you or by Plex) is left untouched.
 
@@ -364,7 +364,7 @@ In the details, each title ends with a tag:
 | `[TO REPLACE]` / `[REPLACED]` | The current logo will be / was replaced (Quebec logo, or with `--replace`) |
 | `[OK]` | Already the right logo, nothing to do (only with `--replace`) |
 | `[KEPT]` | A logo is already set: skipped |
-| `[LOCKED]` | Hand-picked logo: skipped |
+| `[LOCKED]` | Hand-picked logo (locked field with a logo): skipped |
 | `[NONE]` | Plex recommends no logo in any of the languages: skipped |
 | `[CHECK]` | Only a Quebec logo is available: do it by hand |
 | `[REJECTED]` | With `--choices`: rejected in the review page |

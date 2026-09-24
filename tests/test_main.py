@@ -238,3 +238,21 @@ def test_ignored_titles_are_skipped_without_querying_plex(main, tmp_path):
                                    lines.append, opts, ctx, ["fr-FR", "en-US"])
     assert results["ignored"] == ["Edge of Tomorrow (2014)"]
     assert any("[IGNORED]" in line for line in lines)
+
+
+# --- locked fields -----------------------------------------------------------------
+
+@pytest.mark.parametrize("locked, has_logo, is_qc, replace, include_locked, fix_qc, kept", [
+    (True, True, False, False, False, False, True),    # hand-picked logo: left alone
+    (True, False, False, False, False, False, False),  # locked but empty: a logo is proposed
+    (False, True, False, False, False, False, False),  # not locked: not protected by the lock
+    (True, True, True, False, False, True, False),     # locked Quebec logo + --fix-locked-quebec
+    (True, True, True, False, False, False, True),     # locked Quebec logo without the option
+    (True, True, False, True, True, False, False),     # --replace --include-locked
+])
+def test_keeps_locked_logo(main, locked, has_logo, is_qc, replace, include_locked, fix_qc, kept):
+    import argparse
+    plan = main.Plan()
+    plan.locked, plan.current, plan.current_is_qc = locked, (object() if has_logo else None), is_qc
+    opts = argparse.Namespace(replace=replace, include_locked=include_locked, fix_locked_quebec=fix_qc)
+    assert main.keeps_locked_logo(plan, opts) is kept

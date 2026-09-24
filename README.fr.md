@@ -28,7 +28,7 @@ Par défaut, chaque bibliothèque utilise **sa propre langue** (celle réglée d
 
 Pour chaque titre des bibliothèques choisies :
 
-1. **Il ne touche jamais à un logo choisi à la main** (verrouillé), sauf avec `--fix-locked-quebec` s'il est québécois. Il ne touche pas non plus aux logos posés par Plex, **sauf s'ils sont québécois**.
+1. **Il ne touche jamais à un logo choisi à la main** (verrouillé), sauf avec `--fix-locked-quebec` s'il est québécois. Un champ verrouillé *sans* logo reçoit une proposition comme tout titre sans logo : refuse-la dans la page de contrôle pour garder le titre tel quel (il rejoint alors les [titres ignorés](#titres-ignorés)). Il ne touche pas non plus aux logos posés par Plex, **sauf s'ils sont québécois**.
 2. **Pour les titres sans logo, il demande à Plex le logo qu'il recommande**, dans la langue de la bibliothèque d'abord, puis en anglais s'il n'y en a pas. C'est exactement le logo que Plex aurait choisi lui-même. Le script interroge pour cela le service de métadonnées de Plex (`metadata.provider.plex.tv`) avec ton token Plex, sans clé TMDB.
 3. **Il retrouve ce logo parmi ceux proposés par ton serveur** (même URL ou image identique au pixel près) et le sélectionne. Il ne l'ajoute depuis Internet que s'il ne le trouve pas.
 
@@ -338,7 +338,7 @@ Chaque application enregistre l'état d'avant dans `undo.json`, dans son dossier
 .venv/bin/python plex-smart-logo-updater.py --undo logs/<dossier de l'application> --apply    # restauration
 ```
 
-- Un titre qui n'avait pas de logo le perd à nouveau.
+- Un titre qui n'avait pas de logo le perd à nouveau (et retrouve son verrou si le champ était verrouillé).
 - Un titre qui avait un logo retrouve l'ancien, avec son verrou d'origine.
 - Un logo modifié depuis l'application (par toi ou par Plex) n'est pas touché.
 
@@ -366,7 +366,7 @@ Dans le détail, chaque titre se termine par une étiquette :
 | `[TO REPLACE]` / `[REPLACED]` | Le logo actuel va être / a été remplacé (logo québécois, ou avec `--replace`) |
 | `[OK]` | Déjà le bon logo, rien à faire (uniquement avec `--replace`) |
 | `[KEPT]` | Un logo est déjà en place : ignoré |
-| `[LOCKED]` | Logo choisi à la main : ignoré |
+| `[LOCKED]` | Logo choisi à la main (champ verrouillé avec un logo) : ignoré |
 | `[NONE]` | Plex ne recommande aucun logo dans les langues demandées : ignoré |
 | `[CHECK]` | Seul un logo québécois est disponible : à faire à la main |
 | `[REJECTED]` | Avec `--choices` : refusé dans la page de contrôle |
