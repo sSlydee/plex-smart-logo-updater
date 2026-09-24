@@ -175,3 +175,31 @@ def test_write_config_keeps_keys_it_does_not_know(configure, tmp_path):
                                         ("24", None), ("six", None), ("", None), ("-1", None)])
 def test_parse_hour(configure, text, hour):
     assert configure.parse_hour(text) == hour
+
+
+# --- languages ---------------------------------------------------------------
+
+@pytest.mark.parametrize("library_language, setting, expected", [
+    ("fr-FR", "auto", ["fr-FR", "en-US"]),
+    ("en-US", "auto", ["en-US"]),
+    ("en", "auto", ["en"]),
+    ("de-DE", "auto", ["de-DE", "en-US"]),
+    ("xn", "auto", ["en-US"]),          # Plex's "no language"
+    (None, "auto", ["en-US"]),
+    ("en-US", "fr-FR,en-US", ["fr-FR", "en-US"]),   # a fixed list applies to every library
+    ("de-DE", " de-DE , ja-JP ", ["de-DE", "ja-JP"]),
+])
+def test_languages_for(main, library_language, setting, expected):
+    assert main.languages_for(library_language, setting) == expected
+
+
+@pytest.mark.parametrize("languages, checked", [
+    (["fr-FR", "en-US"], True),
+    (["fr", "en-US"], True),
+    (["fr-CA", "en-US"], False),   # a Quebec library keeps its Quebec logos
+    (["en-US"], False),
+    (["en-US", "fr-FR"], False),
+    ([], False),
+])
+def test_quebec_detection_only_for_french_first(main, languages, checked):
+    assert main.checks_quebec(languages) is checked

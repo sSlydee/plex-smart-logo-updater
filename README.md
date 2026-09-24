@@ -6,7 +6,7 @@
 
 A Python script that automatically gives your Plex movies and shows a **good-quality logo, in French when possible**. It also replaces the **French-Canadian (Quebec) logos** that Plex sometimes picks by mistake.
 
-The language fallback works for any library language (e.g. `PLEX_LANGUAGES=de-DE,en-US` for a German library: German logo first, English otherwise). The Quebec logo detection only applies to French libraries.
+By default each library uses **its own language** (as set in Plex), then English: a French library gets French logos, a German one German logos, an English one English logos. The Quebec logo detection only applies to French libraries.
 
 Based on [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-logo-updater) (MIT license).
 
@@ -25,7 +25,7 @@ The original script simply picked the first logo in the list, which may be in Ch
 For every title in the selected libraries:
 
 1. **It never touches a hand-picked (locked) logo**, except with `--fix-locked-quebec` when it is a Quebec logo. It does not touch logos set by Plex either, **unless they are Quebec logos**.
-2. **For titles without a logo, it asks Plex for the logo it recommends**, in French first, then in English if there is none. This is exactly the logo Plex would have picked itself. The script queries Plex's metadata service (`metadata.provider.plex.tv`) with your Plex token; no TMDB key is needed.
+2. **For titles without a logo, it asks Plex for the logo it recommends**, in the library's language first, then in English if there is none. This is exactly the logo Plex would have picked itself. The script queries Plex's metadata service (`metadata.provider.plex.tv`) with your Plex token; no TMDB key is needed.
 3. **It finds that logo among the ones your server offers** (same URL, or pixel-identical image) and selects it. It only uploads it from the Internet when it cannot find it.
 
 By default the script does a **dry run**: it shows what it would do without changing anything.
@@ -77,7 +77,7 @@ The wizard asks a few questions and writes `config.env` next to the script:
 
 1. the Plex server address and your token, with a **connection test**;
 2. the libraries to process, picked from **your server's list**;
-3. the logo language (French, then English, by default);
+3. the logo language (by default, each library's own language, then English);
 4. notifications (Discord, Bark, generic webhook), with **a test message**;
 5. the **automatic run** in cron: daily, weekly or never.
 
@@ -110,7 +110,7 @@ A new token is only saved if the connection to Plex succeeds with it.
 | `PLEX_URL` | **Local** address of the Plex server | `http://192.168.1.100:32400` |
 | `PLEX_TOKEN` | Your Plex token ([how to find it](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)) | `xxxxxxxxxxxxxxxxxxxx` |
 | `PLEX_LIBRARIES` | Libraries to process, comma-separated | `Movies,TV Shows,Anime` |
-| `PLEX_LANGUAGES` | Languages in order of preference (optional) | `fr-FR,en-US` (default) |
+| `PLEX_LANGUAGES` | Languages in order of preference (optional). `auto`: each library's own language, then English | `auto` (default), or e.g. `fr-FR,en-US` for every library |
 | `NOTIFY_URLS` | Webhooks for `--notify`, comma-separated (optional) | see [Notifications](#notifications) |
 | `PLEX_LOGS_DIR` | Logs folder (optional) | `logs/` next to the script (default) |
 | `PLEX_OCR_CACHE` | OCR cache (optional) | `.cache-ocr.json` next to the script (default) |

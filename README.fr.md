@@ -8,7 +8,7 @@ L'interface du script (messages, logs, page de contrôle, assistant) est en angl
 
 Script Python qui ajoute automatiquement un **logo de qualité, en français de préférence**, aux films et séries de Plex qui n'en ont pas. Il remplace aussi les **logos québécois** que Plex pose par erreur.
 
-Le repli de langue fonctionne pour toutes les langues de bibliothèque (par exemple `PLEX_LANGUAGES=de-DE,en-US` pour une bibliothèque allemande : logo allemand d'abord, sinon anglais). La détection des logos québécois ne concerne que les bibliothèques en français.
+Par défaut, chaque bibliothèque utilise **sa propre langue** (celle réglée dans Plex), puis l'anglais : une bibliothèque en français reçoit des logos français, une bibliothèque allemande des logos allemands, une bibliothèque anglaise des logos anglais. La détection des logos québécois ne concerne que les bibliothèques en français.
 
 Basé sur [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-logo-updater) (licence MIT).
 
@@ -27,7 +27,7 @@ Le script d'origine se contentait de prendre le premier logo de la liste. Ce log
 Pour chaque titre des bibliothèques choisies :
 
 1. **Il ne touche jamais à un logo choisi à la main** (verrouillé), sauf avec `--fix-locked-quebec` s'il est québécois. Il ne touche pas non plus aux logos posés par Plex, **sauf s'ils sont québécois**.
-2. **Pour les titres sans logo, il demande à Plex le logo qu'il recommande**, en français d'abord, puis en anglais s'il n'y en a pas. C'est exactement le logo que Plex aurait choisi lui-même. Le script interroge pour cela le service de métadonnées de Plex (`metadata.provider.plex.tv`) avec ton token Plex, sans clé TMDB.
+2. **Pour les titres sans logo, il demande à Plex le logo qu'il recommande**, dans la langue de la bibliothèque d'abord, puis en anglais s'il n'y en a pas. C'est exactement le logo que Plex aurait choisi lui-même. Le script interroge pour cela le service de métadonnées de Plex (`metadata.provider.plex.tv`) avec ton token Plex, sans clé TMDB.
 3. **Il retrouve ce logo parmi ceux proposés par ton serveur** (même URL ou image identique au pixel près) et le sélectionne. Il ne l'ajoute depuis Internet que s'il ne le trouve pas.
 
 Par défaut, le script fait une **simulation** : il affiche ce qu'il ferait sans rien modifier.
@@ -79,7 +79,7 @@ L'assistant pose quelques questions (en anglais) et écrit `config.env` à côt�
 
 1. l'adresse du serveur Plex et ton token, avec un **test de connexion** ;
 2. les bibliothèques à traiter, choisies dans la **liste de ton serveur** ;
-3. la langue des logos (français, sinon anglais, par défaut) ;
+3. la langue des logos (par défaut, la langue de chaque bibliothèque, puis l'anglais) ;
 4. les notifications (Discord, Bark, webhook générique), avec **un message de test** ;
 5. l'**analyse automatique** dans cron : tous les jours, une fois par semaine ou jamais.
 
@@ -112,7 +112,7 @@ Un nouveau token n'est enregistré que si la connexion à Plex réussit avec lui
 | `PLEX_URL` | Adresse **locale** du serveur Plex | `http://192.168.1.100:32400` |
 | `PLEX_TOKEN` | Ton token Plex ([comment le trouver](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)) | `xxxxxxxxxxxxxxxxxxxx` |
 | `PLEX_LIBRARIES` | Bibliothèques à traiter, séparées par des virgules | `Films,Séries TV,Animations Japonaise` |
-| `PLEX_LANGUAGES` | Langues par ordre de préférence (facultatif) | `fr-FR,en-US` (par défaut) |
+| `PLEX_LANGUAGES` | Langues par ordre de préférence (facultatif). `auto` : la langue de chaque bibliothèque, puis l'anglais | `auto` (par défaut), ou par exemple `fr-FR,en-US` pour toutes les bibliothèques |
 | `NOTIFY_URLS` | Webhooks pour `--notify`, séparés par des virgules (facultatif) | voir [Notifications](#notifications) |
 | `PLEX_LOGS_DIR` | Dossier des logs (facultatif) | `logs/` à côté du script (par défaut) |
 | `PLEX_OCR_CACHE` | Cache des lectures OCR (facultatif) | `.cache-ocr.json` à côté du script (par défaut) |

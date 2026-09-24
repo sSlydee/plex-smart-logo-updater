@@ -20,7 +20,8 @@ or in environment variables, which take precedence:
   PLEX_URL        e.g. http://192.168.1.100:32400
   PLEX_TOKEN      your X-Plex-Token
   PLEX_LIBRARIES  comma-separated library names, e.g. "Movies,TV Shows"
-  PLEX_LANGUAGES  preference order, default: "fr-FR,en-US"
+  PLEX_LANGUAGES  preference order, e.g. "fr-FR,en-US"; default "auto": each library's
+                  own language, then English
   PLEX_LOGS_DIR   logs folder, default: logs/ next to the script
   PLEX_OCR_CACHE  OCR cache, default: .cache-ocr.json next to the script
   PLEX_LOGS_KEEP  dry-run log folders to keep, default: 100 (apply folders are always kept)
@@ -49,7 +50,7 @@ import notify as notifier
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -59,7 +60,32 @@ envfile.load_into_environ(os.environ.get("PLEX_CONFIG", os.path.join(HERE, "conf
 PLEX_URL = os.environ.get("PLEX_URL", "http://LOCAL_IP_ADDRESS:32400")
 PLEX_TOKEN = os.environ.get("PLEX_TOKEN", "YOUR_PLEX_TOKEN")
 TARGET_LIBRARIES = [s.strip() for s in os.environ.get("PLEX_LIBRARIES", "Movies,TV Shows").split(",")]
-LANGUAGES = [s.strip() for s in os.environ.get("PLEX_LANGUAGES", "fr-FR,en-US").split(",")]
+LANGUAGES_SETTING = os.environ.get("PLEX_LANGUAGES", "auto").strip() or "auto"
+FALLBACK_LANGUAGE = "en-US"
+
+
+def languages_for(library_language, setting=None):
+    """
+    Languages to try, in order, for a library. "auto" means the library's own
+    language (as set in Plex), then English; otherwise the comma-separated list.
+    """
+    setting = LANGUAGES_SETTING if setting is None else setting
+    if setting.lower() != "auto":
+        return [s.strip() for s in setting.split(",") if s.strip()]
+    lang = (library_language or "").strip()
+    # Plex uses "xn" (no linguistic content) or an empty value when no language is set
+    if not lang or lang.lower() in ("xn", "none", "und"):
+        return [FALLBACK_LANGUAGE]
+    languages = [lang]
+    if lang.split("-")[0].lower() != FALLBACK_LANGUAGE.split("-")[0]:
+        languages.append(FALLBACK_LANGUAGE)
+    return languages
+
+
+def checks_quebec(languages):
+    """Quebec logos are only looked for when French (other than Quebec French) comes first."""
+    first = languages[0].lower() if languages else ""
+    return first.startswith("fr") and first != "fr-ca"
 LOGS_DIR = os.environ.get("PLEX_LOGS_DIR", os.path.join(HERE, "logs"))
 OCR_CACHE_PATH = os.environ.get("PLEX_OCR_CACHE", os.path.join(HERE, ".cache-ocr.json"))
 LOGS_KEEP = int(os.environ.get("PLEX_LOGS_KEEP", "100"))
@@ -465,7 +491,7 @@ def minutes(seconds):
     return f"{m} min {s:02d} s"
 
 
-def write_header(log, title, opts, extra=()):
+def write_header(log, title, opts, extra=(), languages=None):
     log(LINE)
     log(f"  {title}")
     log(LINE)
@@ -477,7 +503,14 @@ def write_header(log, title, opts, extra=()):
         log(f"  {line}")
     log("")
     log("  Rules:")
-    log(f"    1. Use the logo Plex recommends in {', otherwise in '.join(lang_name(l) for l in LANGUAGES)}.")
+    if languages is None:
+        if LANGUAGES_SETTING.lower() == "auto":
+            log("    1. Use the logo Plex recommends in each library's language, otherwise in English.")
+        else:
+            log(f"    1. Use the logo Plex recommends in "
+                f"{', otherwise in '.join(lang_name(l) for l in languages_for(None))}.")
+    else:
+        log(f"    1. Use the logo Plex recommends in {', otherwise in '.join(lang_name(l) for l in languages)}.")
     if not opts.replace:
         log("    2. Only titles WITHOUT a logo are handled: an existing logo is kept.")
     elif opts.include_locked:
@@ -557,7 +590,7 @@ class Plan:
         return self.category in ("add", "replace")
 
 
-def plan_item(plex, item, logos, log, opts):
+def plan_item(plex, item, logos, log, opts, languages):
     """Inspects a title and decides what to do, without changing anything."""
     plan = Plan()
     plan.current_index, plan.current = next(((i, l) for i, l in enumerate(logos) if l.selected), (None, None))
@@ -572,8 +605,8 @@ def plan_item(plex, item, logos, log, opts):
 
     # Risk of a Quebec logo: the Quebec title differs from the French title
     risky = False
-    if LANGUAGES[0].startswith("fr"):
-        fr_title = provider_info(item, LANGUAGES[0])[0]
+    if checks_quebec(languages):
+        fr_title = provider_info(item, languages[0])[0]
         ca_title = provider_info(item, "fr-CA")[0]
         risky = quebec.titles_differ(fr_title, ca_title)
         if risky:
@@ -600,7 +633,7 @@ def plan_item(plex, item, logos, log, opts):
 
     # Logo recommended by Plex
     searched = []
-    for lang in LANGUAGES:
+    for lang in languages:
         url = recommended_logo(item, lang)
         searched.append(f"{lang_name(lang)}: {'found' if url else 'none'}")
         if url:
@@ -628,7 +661,7 @@ def plan_item(plex, item, logos, log, opts):
     fr_differs = quebec.normalize(plan.titles[0]) != quebec.normalize(plan.titles[2])
     if risky and (plan.current_is_qc or plan.target_url is None or (rec_verdict != quebec.FR and fr_differs)):
         exclude = {plan.current_index} if plan.current_is_qc else set()
-        picks = {u for u in (recommended_logo(item, lang) for lang in LANGUAGES) if u}
+        picks = {u for u in (recommended_logo(item, lang) for lang in languages) if u}
         index, candidate, text, kind, mention = best_french_candidate(
             plex, logos, plan.titles, exclude, picks, current=plan.current if plan.current_is_qc else None)
         # An acceptable recommended logo is only replaced by one showing the French title
@@ -746,7 +779,7 @@ def load_choices(path):
     return data.get("decisions", {})
 
 
-def process_library(plex, section, log, opts, ctx):
+def process_library(plex, section, log, opts, ctx, languages):
     cats = categories_for(opts)
     results = empty_results()
     items = section.all()
@@ -761,7 +794,7 @@ def process_library(plex, section, log, opts, ctx):
         log(f"[{n}/{len(items)}] {label}")
         try:
             logos = item.logos()
-            plan = plan_item(plex, item, logos, log, opts)
+            plan = plan_item(plex, item, logos, log, opts, languages)
 
             if plan.category == "locked" and plan.current_is_qc:
                 results["locked_qc"].append(label)
@@ -934,10 +967,14 @@ def run(opts):
             continue
         lib_start = time.time()
         log = Log(os.path.join(run_dir, safe_filename(name) + ".txt"), echo=not opts.quiet)
+        languages = languages_for(section.language)
         write_header(log, f"LIBRARY: {name}", opts,
-                     [f"Content     : {section.totalSize} title(s), language {section.language}"])
+                     [f"Content     : {section.totalSize} title(s), language {section.language}",
+                      f"Logo langs  : {' > '.join(languages)}"
+                      + (" (+ Quebec logo detection)" if checks_quebec(languages) else "")],
+                     languages=languages)
         try:
-            results = process_library(plex, section, log, opts, ctx)
+            results = process_library(plex, section, log, opts, ctx, languages)
         except TokenError as e:
             log(f"\n[!] Stopped: {e}")
             log.close()

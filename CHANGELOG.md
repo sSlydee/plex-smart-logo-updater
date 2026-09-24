@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.1.0] - 2026-09-24
+
+### Added
+- `PLEX_LANGUAGES=auto`, the new default: each library uses its own language (as set in Plex), then English. A French library gets French logos (with the Quebec logo detection), a German one German logos, an English one English logos.
+- Each library log shows the languages it uses.
+- The setup wizard recommends `auto` and lists the language of the selected libraries.
+
+### Changed
+- The Quebec logo detection is skipped for Quebec French (`fr-CA`) libraries.
+- A fixed list (e.g. `PLEX_LANGUAGES=fr-FR,en-US`) keeps working and still applies to every library.
+
 ## [1.0.0] - 2026-09-24
 
 First release.
@@ -28,4 +39,5 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.1.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.1.0
 [1.0.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.0.0

@@ -31,9 +31,9 @@ CRON_MARK = "# plex-smart-logo-updater"
 
 TOKEN_HELP = "https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/"
 LANGUAGE_CHOICES = [
-    ("fr-FR,en-US", "French, otherwise English (recommended for French libraries)"),
-    ("fr-FR", "French only"),
-    ("en-US", "English only"),
+    ("auto", "auto: each library's own language, then English (recommended)"),
+    ("fr-FR,en-US", "French, otherwise English, for every library"),
+    ("en-US", "English only, for every library"),
 ]
 DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -213,11 +213,17 @@ def step_libraries(values, plex):
     print(f"  ✓ {len(names)} library(ies): {', '.join(names)}")
 
 
-def step_languages(values):
+def step_languages(values, plex=None):
     title("3. Logo language")
-    print("Languages to try, in order. The Quebec logo detection only runs when French comes first.")
+    print("Languages to try, in order. With \"auto\", each library uses the language set in Plex")
+    print("(then English); the Quebec logo detection runs for French libraries.")
+    if plex is not None:
+        chosen = [s.strip() for s in values.get("PLEX_LIBRARIES", "").split(",") if s.strip()]
+        langs = {s.title: s.language for s in plex.library.sections() if s.title in chosen}
+        if langs:
+            print("Your libraries: " + ", ".join(f"{t} ({l})" for t, l in langs.items()))
     codes = [c for c, _ in LANGUAGE_CHOICES]
-    current = values.get("PLEX_LANGUAGES", "fr-FR,en-US")
+    current = values.get("PLEX_LANGUAGES", "auto") or "auto"
     labels = [label for _, label in LANGUAGE_CHOICES] + [f"other (current: {current})" if current not in codes
                                                         else "other (Plex codes, e.g. de-DE,en-US)"]
     default = codes.index(current) + 1 if current in codes else len(labels)
@@ -361,7 +367,7 @@ def main():
                     sys.exit(f"Cannot connect to Plex ({error}): run configure.py --token.")
             step_libraries(values, plex)
         if args.language:
-            step_languages(values)
+            step_languages(values, plex)
         if args.notifications:
             step_notifications(values)
         if values and (args.token is not None or args.server or args.libraries or args.language
@@ -377,7 +383,7 @@ def main():
         print("Existing configuration found: press Enter to keep each value.")
     plex = step_plex(values)
     step_libraries(values, plex)
-    step_languages(values)
+    step_languages(values, plex)
     step_notifications(values)
     title("Saved")
     save(values)
