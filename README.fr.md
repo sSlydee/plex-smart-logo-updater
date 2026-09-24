@@ -1,4 +1,4 @@
-# plex-smart-logo-updater
+# plex smart logo updater
 
 **Des logos Plex (ClearLogo) mieux choisis : le bon logo dans la langue de chaque bibliothèque, l'anglais en secours, et pas de logos québécois dans les bibliothèques françaises.**
 
