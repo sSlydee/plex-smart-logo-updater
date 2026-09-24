@@ -4,7 +4,7 @@ Setup wizard for plex-smart-logo-updater.py.
 Asks a few questions, tests the Plex connection and the notifications, then
 writes config.env (readable by you only). It can also install the automatic
 run in cron. Run it again to change the configuration: current values are
-offered as defaults (press Enter to keep them). The questions are in French.
+offered as defaults (press Enter to keep them).
 
 Usage:
   .venv/bin/python configure.py                   full setup
@@ -28,11 +28,11 @@ CRON_MARK = "# plex-smart-logo-updater"
 
 TOKEN_HELP = "https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/"
 LANGUAGE_CHOICES = [
-    ("fr-FR,en-US", "français, sinon anglais (recommandé)"),
-    ("fr-FR", "français uniquement"),
-    ("en-US", "anglais uniquement"),
+    ("fr-FR,en-US", "French, otherwise English (recommended for French libraries)"),
+    ("fr-FR", "French only"),
+    ("en-US", "English only"),
 ]
-DAYS = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
 
 # ---------------------------------------------------------------------------
@@ -47,29 +47,29 @@ def title(text):
 def ask(question, default=""):
     suffix = f" [{default}]" if default else ""
     try:
-        answer = input(f"{question}{suffix} : ").strip()
+        answer = input(f"{question}{suffix}: ").strip()
     except EOFError:
         print()
-        sys.exit("Configuration interrompue.")
+        sys.exit("Setup interrupted.")
     return answer or default
 
 
 def ask_secret(question, default=""):
     shown = f"{default[:4]}…" if default else ""
-    suffix = f" [{shown}, Entrée pour garder]" if default else ""
+    suffix = f" [{shown}, Enter to keep]" if default else ""
     if sys.stdin.isatty():
-        answer = getpass.getpass(f"{question}{suffix} : ").strip()
+        answer = getpass.getpass(f"{question}{suffix}: ").strip()
     else:
         answer = ask(question)
     return answer or default
 
 
 def ask_yes(question, default=True):
-    hint = "O/n" if default else "o/N"
+    hint = "Y/n" if default else "y/N"
     answer = ask(f"{question} ({hint})").lower()
     if not answer:
         return default
-    return answer.startswith(("o", "y"))
+    return answer.startswith(("y", "o"))  # "o" for "oui"
 
 
 def ask_choice(question, options, default=1):
@@ -80,7 +80,7 @@ def ask_choice(question, options, default=1):
         answer = ask(question, str(default))
         if answer.isdigit() and 1 <= int(answer) <= len(options):
             return int(answer) - 1
-        print("  Réponse invalide, tape un des numéros ci-dessus.")
+        print("  Invalid answer, type one of the numbers above.")
 
 
 # ---------------------------------------------------------------------------
@@ -141,98 +141,99 @@ def connect(url, token):
     except Exception as e:
         text = str(e)
         if "401" in text or "nauthorized" in text:
-            text = "token refusé par le serveur (401)"
+            text = "token rejected by the server (401)"
         return None, text
 
 
 def step_token(values, token=None):
     """Changes the token only, keeping the server address."""
-    title("Token Plex")
+    title("Plex token")
     if not values.get("PLEX_URL"):
-        sys.exit("Aucune adresse de serveur configurée : lance d'abord configure.py sans option.")
-    print(f"Serveur : {values['PLEX_URL']}")
+        sys.exit("No server address configured: run configure.py without options first.")
+    print(f"Server: {values['PLEX_URL']}")
     interactive = token is None
     while True:
         if interactive:
-            print(f"Où trouver le token : {TOKEN_HELP}")
-            token = ask_secret("Nouveau token Plex (X-Plex-Token)")
+            print(f"Where to find the token: {TOKEN_HELP}")
+            token = ask_secret("New Plex token (X-Plex-Token)")
         if not token:
-            sys.exit("Aucun token saisi : rien n'a changé.")
+            sys.exit("No token entered: nothing changed.")
         plex, error = connect(values["PLEX_URL"], token)
         if plex is not None:
-            print(f"  ✓ Connecté à « {plex.friendlyName} » (Plex {plex.version})")
+            print(f'  ✓ Connected to "{plex.friendlyName}" (Plex {plex.version})')
             values["PLEX_TOKEN"] = token
             return plex
-        print(f"  ✗ Connexion impossible : {error}")
-        if not interactive or not ask_yes("Réessayer ?"):
-            sys.exit("Le token n'a pas été changé.")
+        print(f"  ✗ Connection failed: {error}")
+        if not interactive or not ask_yes("Try again?"):
+            sys.exit("The token was not changed.")
         token = None
 
 
 def step_plex(values):
-    title("1. Serveur Plex")
-    print("Utilise l'adresse LOCALE du serveur (ex. http://192.168.1.100:32400),")
-    print("pas un nom de domaine public derrière un reverse proxy.")
+    title("1. Plex server")
+    print("Use the server's LOCAL address (e.g. http://192.168.1.100:32400),")
+    print("not a public domain name behind a reverse proxy.")
     while True:
-        url = ask("Adresse du serveur Plex", values.get("PLEX_URL", "http://127.0.0.1:32400")).rstrip("/")
+        url = ask("Plex server address", values.get("PLEX_URL", "http://127.0.0.1:32400")).rstrip("/")
         if not re.match(r"^https?://", url):
             url = "http://" + url
-        print(f"Token Plex : voir {TOKEN_HELP}")
-        token = ask_secret("Token Plex (X-Plex-Token)", values.get("PLEX_TOKEN", ""))
+        print(f"Plex token: see {TOKEN_HELP}")
+        token = ask_secret("Plex token (X-Plex-Token)", values.get("PLEX_TOKEN", ""))
         plex, error = connect(url, token)
         if plex is None:
-            print(f"  ✗ Connexion impossible : {error}")
-            if not ask_yes("Réessayer ?"):
-                sys.exit("Configuration interrompue.")
+            print(f"  ✗ Connection failed: {error}")
+            if not ask_yes("Try again?"):
+                sys.exit("Setup interrupted.")
             continue
-        print(f"  ✓ Connecté à « {plex.friendlyName} » (Plex {plex.version})")
+        print(f'  ✓ Connected to "{plex.friendlyName}" (Plex {plex.version})')
         values["PLEX_URL"], values["PLEX_TOKEN"] = url, token
         return plex
 
 
 def step_libraries(values, plex):
-    title("2. Bibliothèques à traiter")
+    title("2. Libraries to process")
     sections = [s for s in plex.library.sections() if s.type in ("movie", "show")]
     if not sections:
-        sys.exit("Aucune bibliothèque de films ou de séries sur ce serveur.")
+        sys.exit("No movie or TV show library on this server.")
     current = [s.strip() for s in values.get("PLEX_LIBRARIES", "").split(",") if s.strip()]
     for i, s in enumerate(sections, 1):
         mark = "x" if s.title in current else " "
-        kind = "films" if s.type == "movie" else "séries"
-        print(f"  [{mark}] {i:>2}. {s.title} ({kind}, langue {s.language})")
-    default = ",".join(str(i) for i, s in enumerate(sections, 1) if s.title in current) or "tout"
+        kind = "movies" if s.type == "movie" else "shows"
+        print(f"  [{mark}] {i:>2}. {s.title} ({kind}, language {s.language})")
+    default = ",".join(str(i) for i, s in enumerate(sections, 1) if s.title in current) or "all"
     while True:
-        answer = ask("Numéros séparés par des virgules, ou « tout »", default).lower()
-        if answer in ("tout", "all", "*"):
+        answer = ask('Comma-separated numbers, or "all"', default).lower()
+        if answer in ("all", "*", "tout"):
             chosen = sections
         else:
             try:
                 chosen = [sections[int(n) - 1] for n in re.split(r"[\s,;]+", answer) if n]
             except (ValueError, IndexError):
-                print("  Réponse invalide.")
+                print("  Invalid answer.")
                 continue
         if chosen:
             break
-        print("  Choisis au moins une bibliothèque.")
+        print("  Pick at least one library.")
     names = [s.title for s in chosen]
     if any("," in n for n in names):
-        sys.exit("Un nom de bibliothèque contient une virgule : renomme-la dans Plex.")
+        sys.exit("A library name contains a comma: rename it in Plex.")
     values["PLEX_LIBRARIES"] = ",".join(names)
-    print(f"  ✓ {len(names)} bibliothèque(s) : {', '.join(names)}")
+    print(f"  ✓ {len(names)} library(ies): {', '.join(names)}")
 
 
 def step_languages(values):
-    title("3. Langue des logos")
+    title("3. Logo language")
+    print("Languages to try, in order. The Quebec logo detection only runs when French comes first.")
     codes = [c for c, _ in LANGUAGE_CHOICES]
     current = values.get("PLEX_LANGUAGES", "fr-FR,en-US")
-    labels = [label for _, label in LANGUAGE_CHOICES] + [f"autre (actuel : {current})" if current not in codes
-                                                        else "autre (codes Plex, ex. fr-FR,en-US)"]
+    labels = [label for _, label in LANGUAGE_CHOICES] + [f"other (current: {current})" if current not in codes
+                                                        else "other (Plex codes, e.g. de-DE,en-US)"]
     default = codes.index(current) + 1 if current in codes else len(labels)
-    choice = ask_choice("Choix", labels, default)
+    choice = ask_choice("Choice", labels, default)
     if choice < len(codes):
         values["PLEX_LANGUAGES"] = codes[choice]
     else:
-        values["PLEX_LANGUAGES"] = ask("Codes de langue par ordre de préférence", current).replace(" ", "")
+        values["PLEX_LANGUAGES"] = ask("Language codes in order of preference", current).replace(" ", "")
 
 
 def describe_target(kind, url):
@@ -240,40 +241,43 @@ def describe_target(kind, url):
         return "Bark"
     if kind == "discord":
         return "Discord"
-    return f"webhook générique ({url.split('/')[2] if '//' in url else url})"
+    return f"generic webhook ({url.split('/')[2] if '//' in url else url})"
 
 
 def step_notifications(values):
     import notify
     import requests
 
-    title("4. Notifications (facultatif)")
+    title("4. Notifications (optional)")
     targets = notify.parse_targets(values.get("NOTIFY_URLS", ""))
     if targets:
-        print("Webhooks actuels : " + ", ".join(describe_target(k, u) for k, u in targets))
-        if not ask_yes("Les garder ?"):
+        print("Current webhooks: " + ", ".join(describe_target(k, u) for k, u in targets))
+        if not ask_yes("Keep them?"):
             targets = []
     else:
-        print("Le script peut te prévenir (Discord, Bark…) quand des titres sont à valider.")
-    add = ask_yes("Ajouter un webhook ?", default=not targets)
+        print("The script can notify you (Discord, Bark…) when titles need review.")
+    add = ask_yes("Add a webhook?", default=not targets)
     while add:
-        kind = ask_choice("Type", ["Discord", "Bark", "webhook générique (POST JSON)"], 1)
+        kind = ask_choice("Type", ["Discord", "Bark", "generic webhook (POST JSON)"], 1)
         if kind == 0:
-            url = ask("URL du webhook Discord (Paramètres du salon > Intégrations > Webhooks)")
-            targets.append(("discord", url))
+            target = ("discord", ask("Discord webhook URL (Channel settings > Integrations > Webhooks)"))
         elif kind == 1:
-            server = ask("Serveur Bark", "https://api.day.app").rstrip("/")
-            key = ask("Clé Bark (affichée dans l'application)")
-            targets.append(("bark", f"{server}/{key}"))
+            server = ask("Bark server", "https://api.day.app").rstrip("/")
+            key = ask("Bark key (shown in the app)").strip("/")
+            target = ("bark", f"{server}/{key}" if key else "")
         else:
-            targets.append(("json", ask("URL du webhook")))
-        add = ask_yes("Ajouter un autre webhook ?", default=False)
+            target = ("json", ask("Webhook URL"))
+        if re.match(r"^https?://\S+$", target[1]):
+            targets.append(target)
+        else:
+            print("  ✗ Invalid address (it must start with http:// or https://): webhook not added.")
+        add = ask_yes("Add another webhook?", default=False)
     values["NOTIFY_URLS"] = ",".join(f"{k}:{u}" for k, u in targets)
-    if targets and ask_yes("Envoyer une notification de test ?"):
+    if targets and ask_yes("Send a test notification?"):
         session = requests.Session()
-        for kind, error in notify.send(session, targets, "Logos Plex : test",
-                                       "Les notifications de plex-smart-logo-updater fonctionnent."):
-            print(f"  {'✓' if error is None else '✗'} {kind}" + (f" : {error}" if error else ""))
+        for kind, error in notify.send(session, targets, "Plex logos: test",
+                                       "plex-smart-logo-updater notifications are working."):
+            print(f"  {'✓' if error is None else '✗'} {kind}" + (f": {error}" if error else ""))
 
 
 def current_cron():
@@ -285,38 +289,38 @@ def current_cron():
 
 
 def step_cron():
-    title("5. Analyse automatique (facultatif)")
+    title("5. Automatic run (optional)")
     existing = current_cron()
     if existing is None:
-        print("cron n'est pas disponible sur cette machine : étape ignorée.")
+        print("cron is not available on this machine: step skipped.")
         return
     lines = existing.splitlines()
     ours = [l for l in lines if CRON_MARK in l]
     if ours:
-        print("Analyse automatique actuelle : " + ours[0].split(CRON_MARK)[0].strip())
-    print("Le script lance une SIMULATION (rien n'est modifié), génère la page de")
-    print("contrôle et t'envoie une notification s'il y a des titres à valider.")
-    choice = ask_choice("Fréquence", ["aucune" + (" (supprimer l'actuelle)" if ours else ""),
-                                      "tous les jours", "une fois par semaine",
-                                      "garder la configuration actuelle"], 4 if ours else 3)
+        print("Current automatic run: " + ours[0].split(CRON_MARK)[0].strip())
+    print("The script runs a DRY RUN (nothing is changed), writes the review page")
+    print("and notifies you when titles need review.")
+    choice = ask_choice("Frequency", ["never" + (" (remove the current one)" if ours else ""),
+                                      "every day", "once a week",
+                                      "keep the current setting"], 4 if ours else 3)
     if choice == 3:
         return
     others = [l for l in lines if CRON_MARK not in l]
     if choice == 0:
         new_lines = others
     else:
-        hour = int(ask("Heure (0-23)", "9") or 9) % 24
+        hour = int(ask("Hour (0-23)", "9") or 9) % 24
         dow = "*"
         if choice == 2:
-            day = ask_choice("Jour", DAYS, 1)
-            dow = str((day + 1) % 7)  # cron : 0 = dimanche
+            day = ask_choice("Day", DAYS, 1)
+            dow = str((day + 1) % 7)  # cron: 0 = Sunday
         python = os.path.join(HERE, ".venv", "bin", "python")
         command = (f"cd {shlex.quote(HERE)} && mkdir -p logs && {shlex.quote(python)} plex-smart-logo-updater.py "
                    f"--html --notify --quiet >> logs/cron.log 2>&1")
         new_lines = others + [f"0 {hour} * * {dow} {command} {CRON_TAG}"]
     text = "\n".join(new_lines) + ("\n" if new_lines else "")
     subprocess.run(["crontab", "-"], input=text, text=True, check=True)
-    print("  ✓ crontab mise à jour.")
+    print("  ✓ crontab updated.")
 
 
 def parse_args():
@@ -337,7 +341,7 @@ def parse_args():
 
 def save(values):
     write_config(CONFIG_PATH, values)
-    print(f"  ✓ Enregistré dans {CONFIG_PATH} (lisible par toi seul)")
+    print(f"  ✓ Saved to {CONFIG_PATH} (readable by you only)")
 
 
 def main():
@@ -348,7 +352,7 @@ def main():
 
     if partial:
         if not values and not args.cron:
-            sys.exit(f"Pas encore de configuration ({CONFIG_PATH}) : lance d'abord configure.py sans option.")
+            sys.exit(f"No configuration yet ({CONFIG_PATH}): run configure.py without options first.")
         plex = None
         if args.token is not None:
             plex = step_token(values, args.token or None)
@@ -358,7 +362,7 @@ def main():
             if plex is None:
                 plex, error = connect(values.get("PLEX_URL", ""), values.get("PLEX_TOKEN", ""))
                 if plex is None:
-                    sys.exit(f"Connexion à Plex impossible ({error}) : lance configure.py --token.")
+                    sys.exit(f"Cannot connect to Plex ({error}): run configure.py --token.")
             step_libraries(values, plex)
         if args.language:
             step_languages(values)
@@ -371,21 +375,21 @@ def main():
             step_cron()
         return
 
-    print("Configuration de plex-smart-logo-updater")
-    print(f"Fichier : {CONFIG_PATH}")
+    print("plex-smart-logo-updater setup")
+    print(f"File: {CONFIG_PATH}")
     if values:
-        print("Configuration existante trouvée : Entrée pour garder chaque valeur.")
+        print("Existing configuration found: press Enter to keep each value.")
     plex = step_plex(values)
     step_libraries(values, plex)
     step_languages(values)
     step_notifications(values)
-    title("Enregistré")
+    title("Saved")
     save(values)
     step_cron()
-    title("Et maintenant")
-    print("Lance une simulation avec la page de contrôle :")
+    title("What's next")
+    print("Run a dry run with the review page:")
     print(f"  cd {shlex.quote(HERE)} && .venv/bin/python plex-smart-logo-updater.py --html")
-    print("Si ton token Plex change : .venv/bin/python configure.py --token")
+    print("If your Plex token changes: .venv/bin/python configure.py --token")
 
 
 if __name__ == "__main__":
@@ -394,4 +398,4 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         print()
-        sys.exit("Configuration interrompue.")
+        sys.exit("Setup interrupted.")

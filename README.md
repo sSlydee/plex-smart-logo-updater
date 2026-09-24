@@ -6,7 +6,7 @@
 
 A Python script that automatically gives your Plex movies and shows a **good-quality logo, in French when possible**. It also replaces the **French-Canadian (Quebec) logos** that Plex sometimes picks by mistake.
 
-The language fallback works for any library language (e.g. `PLEX_LANGUAGES=de-DE,en-US` for a German library: German logo first, English otherwise). The Quebec logo detection only applies to French libraries. The script's messages, logs and review page are currently in **French**.
+The language fallback works for any library language (e.g. `PLEX_LANGUAGES=de-DE,en-US` for a German library: German logo first, English otherwise). The Quebec logo detection only applies to French libraries.
 
 Based on [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-logo-updater) (MIT license).
 
@@ -39,7 +39,7 @@ For each title, the script compares the French (fr-FR) and Quebec (fr-CA) titles
   4. the largest one.
 - When the French title differs from the original title and the logo recommended by Plex is not clearly French (English, unreadable…), the script looks for a logo showing the French title among the others (e.g. "HAPPY BIRTHDEAD" rather than "HAPPY DEATH DAY"). When France keeps the original title, Plex's pick is kept.
 - **A Quebec logo is never added.** If Plex recommends a Quebec logo, the script looks for another one.
-- If **only** Quebec logos exist, the title is tagged `[À VÉRIFIER]` (to check): do it by hand.
+- If **only** Quebec logos exist, the title is tagged `[CHECK]`: do it by hand.
 - A **locked** logo that looks like a Quebec one is reported in the logs. It is only replaced with `--fix-locked-quebec`.
 - When Quebec keeps the original title ("Black Box Diaries"), a logo showing that title is **not** considered a Quebec logo.
 
@@ -49,9 +49,9 @@ Three **special mentions** flag logos set with less certainty:
 
 | Mention | Meaning |
 |---|---|
-| `[FRANÇAIS DÉDUIT]` (French, inferred) | The French title is read on the logo and the words specific to the Quebec title are missing (e.g. "PUSH" while Quebec says "Push : La division"). Very likely correct. |
-| `[TITRE ORIGINAL]` (original title) | The logo shows the original title, neither French nor Quebec (e.g. "HAPPY DEATH DAY" for *Happy Birthdead*). |
-| `[NON VÉRIFIÉ]` (not verified) | The OCR could not read the logo (very stylized font, spaced letters…). The logo is set anyway, as Plex would have done: **check it**. |
+| `[FRENCH INFERRED]` | The French title is read on the logo and the words specific to the Quebec title are missing (e.g. "PUSH" while Quebec says "Push : La division"). Very likely correct. |
+| `[ORIGINAL TITLE]` | The logo shows the original title, neither French nor Quebec (e.g. "HAPPY DEATH DAY" for *Happy Birthdead*). |
+| `[NOT VERIFIED]` | The OCR could not read the logo (very stylized font, spaced letters…). The logo is set anyway, as Plex would have done: **check it**. |
 
 OCR results are cached (`.cache-ocr.json`): a new run only reads new logos.
 
@@ -71,7 +71,7 @@ The installer replaces OpenCV 5, pulled in by the OCR library, with an older bui
 
 ## Configuration
 
-The wizard asks a few questions (in French) and writes `config.env` next to the script:
+The wizard asks a few questions and writes `config.env` next to the script:
 
 1. the Plex server address and your token, with a **connection test**;
 2. the libraries to process, picked from **your server's list**;
@@ -99,7 +99,7 @@ To redo a single step:
 
 A new token is only saved if the connection to Plex succeeds with it.
 
-**If your token changes**, the script notices: it stops with the message "Token Plex refusé : change-le avec : .venv/bin/python configure.py --token". With `--notify`, as in an automatic run, this message is also sent as a notification.
+**If your token changes**, the script notices: it stops with the message "Plex token rejected: change it with: .venv/bin/python configure.py --token". With `--notify`, as in an automatic run, this message is also sent as a notification.
 
 `config.env` contains your token: the wizard makes it readable by you only. You can also write it by hand from `config.env.example`.
 
@@ -107,7 +107,7 @@ A new token is only saved if the connection to Plex succeeds with it.
 |---|---|---|
 | `PLEX_URL` | **Local** address of the Plex server | `http://192.168.1.100:32400` |
 | `PLEX_TOKEN` | Your Plex token ([how to find it](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)) | `xxxxxxxxxxxxxxxxxxxx` |
-| `PLEX_LIBRARIES` | Libraries to process, comma-separated | `Films,Séries TV,Animations Japonaise` |
+| `PLEX_LIBRARIES` | Libraries to process, comma-separated | `Movies,TV Shows,Anime` |
 | `PLEX_LANGUAGES` | Languages in order of preference (optional) | `fr-FR,en-US` (default) |
 | `NOTIFY_URLS` | Webhooks for `--notify`, comma-separated (optional) | see [Notifications](#notifications) |
 | `PLEX_LOGS_DIR` | Logs folder (optional) | `logs/` next to the script (default) |
@@ -116,7 +116,7 @@ A new token is only saved if the connection to Plex succeeds with it.
 An environment variable set at launch takes precedence over `config.env`, for example to process a single library:
 
 ```bash
-PLEX_LIBRARIES="Films" .venv/bin/python plex-smart-logo-updater.py
+PLEX_LIBRARIES="Movies" .venv/bin/python plex-smart-logo-updater.py
 ```
 
 Use the server's local IP address rather than a public domain name: a reverse proxy protected by Fail2Ban or CrowdSec could block the script because of the number of requests.
@@ -174,10 +174,10 @@ The script writes `review.html` in the dry run's logs folder.
 **2. Review on your computer:** download `review.html` (SFTP, web file manager…) and open it in your browser. It is a self-contained file: images are embedded, and it contains neither a link to your server nor your token.
 
 - Each change is shown with the old and the new logo.
-- Everything is **approved** by default: click **Refuser** (reject) on the ones you do not want.
-- Filters let you start with the doubtful cases ("Non vérifié", "Titre original"…).
+- Everything is **approved** by default: click **Reject** on the ones you do not want.
+- Filters let you start with the doubtful cases ("Not verified", "Original title"…).
 - Your choices are kept in the browser if you close the page.
-- Click **Exporter choices.json** (export).
+- Click **Export choices.json**.
 
 **3. Apply:** copy `choices.json` to the server, into the dry run's folder, then:
 
@@ -185,7 +185,7 @@ The script writes `review.html` in the dry run's logs folder.
 .venv/bin/python plex-smart-logo-updater.py --apply --choices logs/<dry run folder>/choices.json
 ```
 
-Only the approved changes are applied. A rejected title is tagged `[REFUSÉ]`. If the planned logo changed since the dry run, the title is tagged `[À REVOIR]` (to review again) and left untouched.
+Only the approved changes are applied. A rejected title is tagged `[REJECTED]`. If the planned logo changed since the dry run, the title is tagged `[RECHECK]` and left untouched.
 
 ### Undoing an application
 
@@ -208,55 +208,55 @@ Each run creates a folder in `logs/`, named after the date, time and mode:
 logs/
 └── 2026-09-23_18h20m05_simulation/
     ├── _summary.txt       ← per-library table + totals
-    ├── Films.txt          ← title-by-title details + summary
-    ├── Séries TV.txt
+    ├── Movies.txt         ← title-by-title details + summary
+    ├── TV Shows.txt
     ├── review.html        ← with --html
     └── undo.json          ← in --apply mode
 ```
 
 Each file starts with a header (date, mode, rules applied, legend) and ends with a summary (duration, counts and list of the titles concerned).
 
-In the details, each title ends with a tag (logs are in French):
+In the details, each title ends with a tag:
 
 | Tag | Meaning |
 |---|---|
-| `[À AJOUTER]` / `[AJOUT]` | No logo yet; a logo will be / was set |
-| `[À REMPLACER]` / `[REMPLACÉ]` | The current logo will be / was replaced (Quebec logo, or with `--replace`) |
+| `[TO ADD]` / `[ADDED]` | No logo yet; a logo will be / was set |
+| `[TO REPLACE]` / `[REPLACED]` | The current logo will be / was replaced (Quebec logo, or with `--replace`) |
 | `[OK]` | Already the right logo, nothing to do (only with `--replace`) |
-| `[CONSERVÉ]` | A logo is already set: skipped |
-| `[VERROUILLÉ]` | Hand-picked logo: skipped |
-| `[AUCUN]` | Plex recommends no logo, neither French nor English: skipped |
-| `[À VÉRIFIER]` | Only a Quebec logo is available: do it by hand |
-| `[REFUSÉ]` | With `--choices`: rejected in the review page |
-| `[À REVOIR]` | With `--choices`: the planned logo changed since the dry run |
-| `[NON CONTRÔLÉ]` | With `--choices`: title missing from the choices file (new since the dry run) |
-| `[ERREUR]` | Error (the message is shown) |
+| `[KEPT]` | A logo is already set: skipped |
+| `[LOCKED]` | Hand-picked logo: skipped |
+| `[NONE]` | Plex recommends no logo in any of the languages: skipped |
+| `[CHECK]` | Only a Quebec logo is available: do it by hand |
+| `[REJECTED]` | With `--choices`: rejected in the review page |
+| `[RECHECK]` | With `--choices`: the planned logo changed since the dry run |
+| `[NOT REVIEWED]` | With `--choices`: title missing from the choices file (new since the dry run) |
+| `[ERROR]` | Error (the message is shown) |
 
-Possible mentions after the tag: `[FRANÇAIS DÉDUIT]`, `[TITRE ORIGINAL]` and `[NON VÉRIFIÉ]` (see above).
+Possible mentions after the tag: `[FRENCH INFERRED]`, `[ORIGINAL TITLE]` and `[NOT VERIFIED]` (see above).
 
 Example:
 
 ```
 [1/3] BNA (2020)
-  Logo actuel      : aucun
-  Recherche Plex   : français : aucun | anglais : trouvé
-  Logo recommandé  : anglais, 618x239 px
-  Lien de l'image  : https://metadata-static.plex.tv/...png
-  Trouvé sur Plex  : candidat n°3 sur 7 (tmdb), même URL
-  ==> [À AJOUTER] logo anglais 618x239 px
+  Current logo     : none
+  Plex search      : French: none | English: found
+  Recommended logo : English, 618x239 px
+  Image link       : https://metadata-static.plex.tv/...png
+  Found on Plex    : candidate #3 of 7 (tmdb), same URL
+  ==> [TO ADD] English logo 618x239 px
 ```
 
 Example of a replaced Quebec logo:
 
 ```
 [52/303] Bullet Train (2022)
-  Logo actuel      : n°8 sur 18 (tmdb), posé automatiquement par Plex
-  Titres           : France « Bullet Train » | Québec « Train à grande vitesse » | original « Bullet Train »
-  Lecture du logo  : « TRAIN A C GRANDE VITESSE » -> québécois
-  Recherche Plex   : français : trouvé
-  Lecture reco.    : « TRAIN A C GRANDE VITESSE » -> québécois
-  Choix par OCR    : candidat n°4 sur 18 (tmdb), « BULLET TRAIT » -> français
-  ==> [À REMPLACER] logo « BULLET TRAIT » (français), à la place du n°8 (québécois)
+  Current logo     : #8 of 18 (tmdb), set automatically by Plex
+  Titles           : France "Bullet Train" | Quebec "Train à grande vitesse" | original "Bullet Train"
+  Logo reads       : "TRAIN A C GRANDE VITESSE" -> Quebec
+  Plex search      : French: found
+  Recommended reads: "TRAIN A C GRANDE VITESSE" -> Quebec
+  OCR choice       : candidate #4 of 18 (tmdb), "BULLET TRAIT" -> French
+  ==> [TO REPLACE] logo "BULLET TRAIT" (French), instead of #8 (Quebec)
 ```
 
 The OCR does not always read perfectly (here "TRAIT" instead of "TRAIN"), but the comparison tolerates such small errors.
@@ -268,7 +268,7 @@ The first dry run is slower on movie libraries (about 7 minutes for 300 movies) 
 - A logo selected by the script becomes **locked**, like a manual choice. Plex will not replace it on refresh, and the script will skip it on later runs.
 - Nothing is deleted: the old logo stays available in Plex (*Edit > Logo*).
 - Only the main movie/show logo is handled, not season or episode logos.
-- For titles tagged `[AUCUN]` or `[À VÉRIFIER]`, pick or upload a logo by hand in Plex.
+- For titles tagged `[NONE]` or `[CHECK]`, pick or upload a logo by hand in Plex.
 - `config.env`, the `logs/` and `.venv/` folders and the `.cache-ocr.json` cache must not be published (see `.gitignore`): they contain your token or the list of your titles.
 
 ## License

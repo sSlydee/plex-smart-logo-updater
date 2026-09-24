@@ -25,7 +25,7 @@ or in environment variables, which take precedence:
   PLEX_OCR_CACHE  OCR cache, default: .cache-ocr.json next to the script
   NOTIFY_URLS     webhooks for --notify: Discord, Bark or generic (see notify.py)
 
-See --help for the options. User-facing messages are in French.
+See --help for the options.
 """
 import argparse
 import atexit
@@ -142,7 +142,7 @@ def make_session():
 HTTP = make_session()
 _PROVIDER_CACHE = {}
 
-TOKEN_FIX = "change-le avec : .venv/bin/python configure.py --token"
+TOKEN_FIX = "change it with: .venv/bin/python configure.py --token"
 
 
 class TokenError(Exception):
@@ -164,7 +164,7 @@ def provider_info(item, language):
         url = f"{METADATA_PROVIDER}/library/metadata/{item.guid.split('/')[-1]}?includeImages=1"
         r = HTTP.get(url, headers=headers, timeout=20)
         if r.status_code == 401:
-            raise TokenError("token refusé par le service de métadonnées de Plex (401)")
+            raise TokenError("token rejected by Plex's metadata service (401)")
         r.raise_for_status()
         metadata = r.json()["MediaContainer"].get("Metadata", [])
         if not metadata:
@@ -217,7 +217,7 @@ def find_candidate(plex, logos, target_url, target_size):
     """
     for i, logo in enumerate(logos):
         if logo.ratingKey == target_url or logo.key == target_url:
-            return i, logo, "même URL"
+            return i, logo, "same URL"
 
     same_size = []
     for i, logo in enumerate(logos):
@@ -227,16 +227,16 @@ def find_candidate(plex, logos, target_url, target_size):
         except Exception:
             continue
     if not same_size:
-        return None, None, "aucun candidat de même taille"
+        return None, None, "no candidate of the same size"
 
     target_img = fetch_image(plex, target_url)
     for i, logo in same_size:
         try:
             if same_image(fetch_image(plex, logo), target_img):
-                return i, logo, f"image identique (sur {len(same_size)} de même taille)"
+                return i, logo, f"identical image (out of {len(same_size)} of the same size)"
         except Exception:
             continue
-    return None, None, f"{len(same_size)} de même taille mais aucune identique"
+    return None, None, f"{len(same_size)} of the same size but none identical"
 
 
 def is_locked(item):
@@ -380,33 +380,33 @@ def best_french_candidate(plex, logos, titles, exclude=(), plex_picks=(), curren
 # Categories, mentions, logs
 # ---------------------------------------------------------------------------
 
-LANGUAGE_NAMES = {"fr": "français", "en": "anglais", "ja": "japonais", "de": "allemand",
-                  "es": "espagnol", "it": "italien"}
+LANGUAGE_NAMES = {"fr": "French", "en": "English", "ja": "Japanese", "de": "German",
+                  "es": "Spanish", "it": "Italian", "pt": "Portuguese", "nl": "Dutch"}
 
-# Result categories: (short tag in the details, summary label). Labels are shown to the user in French.
+# Result categories: (short tag in the details, summary label)
 CATEGORIES = {
-    "add":        ("AJOUT",        "Logo ajouté (il n'y en avait pas)"),
-    "replace":    ("REMPLACÉ",     "Logo remplacé"),
-    "ok":         ("OK",           "Déjà le bon logo, rien à faire"),
-    "kept":       ("CONSERVÉ",     "Ignoré : logo déjà en place, conservé"),
-    "locked":     ("VERROUILLÉ",   "Ignoré : logo choisi à la main (verrouillé)"),
-    "none":       ("AUCUN",        "Ignoré : Plex ne propose aucun logo"),
-    "check":      ("À VÉRIFIER",   "Ignoré : seul un logo québécois est disponible"),
-    "refused":    ("REFUSÉ",       "Ignoré : refusé dans la page de contrôle"),
-    "unreviewed": ("NON CONTRÔLÉ", "Ignoré : absent du fichier de choix"),
-    "changed":    ("À REVOIR",     "Ignoré : le logo prévu a changé depuis la simulation"),
-    "error":      ("ERREUR",       "Erreur"),
+    "add":        ("ADDED",        "Logo added (there was none)"),
+    "replace":    ("REPLACED",     "Logo replaced"),
+    "ok":         ("OK",           "Already the right logo, nothing to do"),
+    "kept":       ("KEPT",         "Skipped: a logo is already set, kept"),
+    "locked":     ("LOCKED",       "Skipped: hand-picked logo (locked)"),
+    "none":       ("NONE",         "Skipped: Plex offers no logo"),
+    "check":      ("CHECK",        "Skipped: only a Quebec logo is available"),
+    "refused":    ("REJECTED",     "Skipped: rejected in the review page"),
+    "unreviewed": ("NOT REVIEWED", "Skipped: missing from the choices file"),
+    "changed":    ("RECHECK",      "Skipped: the planned logo changed since the dry run"),
+    "error":      ("ERROR",        "Error"),
 }
 SIM_CATEGORIES = dict(CATEGORIES,
-                      add=("À AJOUTER", "Logo à ajouter (il n'y en a pas)"),
-                      replace=("À REMPLACER", "Logo à remplacer"))
+                      add=("TO ADD", "Logo to add (there is none)"),
+                      replace=("TO REPLACE", "Logo to replace"))
 CHOICE_KEYS = ("refused", "unreviewed", "changed")
 
 # Special mentions, appended after the tag (on top of the category)
 MENTIONS = {
-    "inferred":   ("FRANÇAIS DÉDUIT", "le titre français est lu sur le logo, les mots québécois en sont absents"),
-    "original":   ("TITRE ORIGINAL", "le logo porte le titre original, ni français ni québécois"),
-    "unverified": ("NON VÉRIFIÉ", "logo illisible par l'OCR, posé sans vérification : à contrôler"),
+    "inferred":   ("FRENCH INFERRED", "the French title is read on the logo, the Quebec words are missing"),
+    "original":   ("ORIGINAL TITLE", "the logo shows the original title, neither French nor Quebec"),
+    "unverified": ("NOT VERIFIED", "logo unreadable by OCR, set without verification: check it"),
 }
 MENTION_OF = {quebec.FR_GUESS: "inferred", quebec.ORIGINAL: "original", quebec.UNKNOWN: "unverified"}
 # locked_qc: locked logo that looks like a Quebec one (reported; only changed with --fix-locked-quebec)
@@ -461,35 +461,35 @@ def write_header(log, title, opts, extra=()):
     log(LINE)
     log(f"  {title}")
     log(LINE)
-    log(f"  Date        : {time.strftime('%d/%m/%Y à %H:%M')}")
-    log(f"  Mode        : {'APPLICATION (les logos sont modifiés)' if opts.apply else 'SIMULATION (rien n’est modifié)'}".replace("’", "'"))
+    log(f"  Date        : {time.strftime('%Y-%m-%d %H:%M')}")
+    log(f"  Mode        : {'APPLY (logos are changed)' if opts.apply else 'DRY RUN (nothing is changed)'}")
     if opts.choices:
-        log(f"  Choix       : {opts.choices} (seuls les changements validés sont appliqués)")
+        log(f"  Choices     : {opts.choices} (only approved changes are applied)")
     for line in extra:
         log(f"  {line}")
     log("")
-    log("  Règle appliquée :")
-    log(f"    1. On prend le logo que Plex recommande en {', sinon en '.join(lang_name(l) for l in LANGUAGES)}.")
+    log("  Rules:")
+    log(f"    1. Use the logo Plex recommends in {', otherwise in '.join(lang_name(l) for l in LANGUAGES)}.")
     if not opts.replace:
-        log("    2. Seuls les titres SANS logo sont traités : un logo déjà en place est conservé.")
+        log("    2. Only titles WITHOUT a logo are handled: an existing logo is kept.")
     elif opts.include_locked:
-        log("    2. Les logos déjà en place peuvent être remplacés, y compris ceux choisis à la main.")
+        log("    2. Existing logos may be replaced, including hand-picked ones.")
     else:
-        log("    2. Les logos posés par Plex peuvent être remplacés ; ceux choisis à la main jamais.")
-    log("    3. Si le titre québécois diffère du titre français, le logo est lu (OCR) :")
-    log("       un logo québécois n'est jamais posé, et un logo québécois posé par Plex")
-    log("       est remplacé par un logo au titre français (ou original) s'il en existe un.")
+        log("    2. Logos set by Plex may be replaced; hand-picked ones never.")
+    log("    3. When the Quebec title differs from the French title, the logo is read (OCR):")
+    log("       a Quebec logo is never set, and a Quebec logo set by Plex is replaced")
+    log("       with a logo showing the French (or original) title when one exists.")
     if opts.fix_locked_quebec:
-        log("       Les logos verrouillés détectés comme québécois sont AUSSI remplacés.")
+        log("       Locked logos detected as Quebec logos are ALSO replaced.")
     log("")
-    log("  Légende :")
+    log("  Legend:")
     cats = categories_for(opts)
     width = max(len(tag) for tag, _ in list(cats.values()) + list(MENTIONS.values())) + 2
     for tag, label in cats.values():
         log(f"    {('[' + tag + ']').ljust(width)}  {label}")
     log("")
-    log("  Mentions spéciales (après l'étiquette, uniquement si le titre québécois")
-    log("  diffère du titre français) :")
+    log("  Special mentions (after the tag, only when the Quebec title differs")
+    log("  from the French title):")
     for tag, label in MENTIONS.values():
         log(f"    {('[' + tag + ']').ljust(width)}  {label}")
     log(LINE)
@@ -505,15 +505,15 @@ def write_counts(log, results, cats, indent="  "):
 def write_mentions(log, results):
     """Lists of special mentions, to be checked by hand."""
     sections = [
-        ("locked_qc", "ATTENTION, logos verrouillés qui semblent québécois"),
-        ("unverified", f"[{MENTIONS['unverified'][0]}] logos posés sans vérification, à contrôler"),
-        ("original", f"[{MENTIONS['original'][0]}] logos posés au titre original"),
-        ("inferred", f"[{MENTIONS['inferred'][0]}] logos posés dont le français est déduit"),
+        ("locked_qc", "WARNING, locked logos that look like Quebec logos"),
+        ("unverified", f"[{MENTIONS['unverified'][0]}] logos set without verification, check them"),
+        ("original", f"[{MENTIONS['original'][0]}] logos set with the original title"),
+        ("inferred", f"[{MENTIONS['inferred'][0]}] logos set where French is inferred"),
     ]
     for key, title in sections:
         if results[key]:
             log("")
-            log(f"  {title} ({len(results[key])}) :")
+            log(f"  {title} ({len(results[key])}):")
             for t in results[key]:
                 log(f"    - {t}")
 
@@ -556,11 +556,11 @@ def plan_item(plex, item, logos, log, opts):
     plan.locked = is_locked(item)
 
     if plan.current is None:
-        log("  Logo actuel      : aucun")
+        log("  Current logo     : none")
     else:
-        who = "choisi à la main (verrouillé)" if plan.locked else "posé automatiquement par Plex"
-        log(f"  Logo actuel      : n°{plan.current_index + 1} sur {len(logos)} "
-            f"({plan.current.provider or 'fichier local'}), {who}")
+        who = "hand-picked (locked)" if plan.locked else "set automatically by Plex"
+        log(f"  Current logo     : #{plan.current_index + 1} of {len(logos)} "
+            f"({plan.current.provider or 'local file'}), {who}")
 
     # Risk of a Quebec logo: the Quebec title differs from the French title
     risky = False
@@ -571,38 +571,38 @@ def plan_item(plex, item, logos, log, opts):
         if risky:
             en_title = provider_info(item, "en-US")[0]
             plan.titles = (fr_title, ca_title, en_title)
-            log(f"  Titres           : France « {fr_title} » | Québec « {ca_title} » | original « {en_title} »")
+            log(f"  Titles           : France \"{fr_title}\" | Quebec \"{ca_title}\" | original \"{en_title}\"")
 
     if plan.current is not None and risky:
         v, text = read_logo(plex, plan.current, plan.titles)
         plan.current_is_qc = v == quebec.QC
-        log(f"  Lecture du logo  : « {text} » -> {v}")
+        log(f"  Logo reads       : \"{text}\" -> {v}")
 
     if plan.locked and not (opts.replace and opts.include_locked):
         if not (plan.current_is_qc and opts.fix_locked_quebec):
             plan.category = "locked"
-            plan.detail = "on n'y touche pas"
+            plan.detail = "left untouched"
             if plan.current_is_qc:
-                plan.detail += " (ATTENTION : ce logo semble québécois, voir --fix-locked-quebec)"
+                plan.detail += " (WARNING: this logo looks like a Quebec logo, see --fix-locked-quebec)"
             return plan
 
     if plan.current is not None and not opts.replace and not plan.current_is_qc:
-        plan.category, plan.detail = "kept", "un logo est déjà en place, on n'y touche pas"
+        plan.category, plan.detail = "kept", "a logo is already set, left untouched"
         return plan
 
     # Logo recommended by Plex
     searched = []
     for lang in LANGUAGES:
         url = recommended_logo(item, lang)
-        searched.append(f"{lang_name(lang)} : {'trouvé' if url else 'aucun'}")
+        searched.append(f"{lang_name(lang)}: {'found' if url else 'none'}")
         if url:
             plan.target_url, plan.language = url, lang
             break
-    log(f"  Recherche Plex   : {' | '.join(searched)}")
+    log(f"  Plex search      : {' | '.join(searched)}")
 
     if not plan.target_url and not plan.current_is_qc:
         plan.category = "none"
-        plan.detail = f"{len(logos)} logo(s) disponible(s), mais Plex n'en recommande aucun"
+        plan.detail = f"{len(logos)} logo(s) available, but Plex recommends none"
         return plan
 
     # Is the recommended logo really French? A Quebec one is discarded; if it is
@@ -610,7 +610,7 @@ def plan_item(plex, item, logos, log, opts):
     rec_verdict = None
     if plan.target_url and risky:
         rec_verdict, text = read_logo(plex, plan.target_url, plan.titles)
-        log(f"  Lecture reco.    : « {text} » -> {rec_verdict}")
+        log(f"  Recommended reads: \"{text}\" -> {rec_verdict}")
         if rec_verdict == quebec.QC:
             plan.target_url = None
         else:
@@ -627,39 +627,39 @@ def plan_item(plex, item, logos, log, opts):
         if candidate is not None and (plan.target_url is None or kind == quebec.FR):
             plan.index, plan.candidate, plan.target_url = index, candidate, None
             plan.mention = mention
-            plan.chosen = f"logo « {text} » ({kind})"
-            log(f"  Choix par OCR    : candidat n°{index + 1} sur {len(logos)} ({candidate.provider}), « {text} » -> {kind}")
+            plan.chosen = f"logo \"{text}\" ({kind})"
+            log(f"  OCR choice       : candidate #{index + 1} of {len(logos)} ({candidate.provider}), \"{text}\" -> {kind}")
 
     if plan.candidate is None and plan.target_url is None:
-        what = "le logo actuel est québécois" if plan.current_is_qc else "le logo recommandé est québécois"
+        what = "the current logo is a Quebec logo" if plan.current_is_qc else "the recommended logo is a Quebec logo"
         plan.category = "check"
-        plan.detail = f"{what} et aucun autre logo acceptable n'a été trouvé : à faire à la main"
+        plan.detail = f"{what} and no other acceptable logo was found: do it by hand"
         return plan
 
     if plan.candidate is None:
         target_size = image_size(plex, plan.target_url)
-        log(f"  Logo recommandé  : {lang_name(plan.language)}, {fmt_size(target_size)} px")
-        log(f"  Lien de l'image  : {plan.target_url}")
+        log(f"  Recommended logo : {lang_name(plan.language)}, {fmt_size(target_size)} px")
+        log(f"  Image link       : {plan.target_url}")
 
         if plan.current is not None and not plan.current_is_qc and image_size(plex, plan.current) == target_size \
                 and same_image(fetch_image(plex, plan.current), fetch_image(plex, plan.target_url)):
             plan.category = "ok"
-            plan.detail = f"le logo actuel est déjà celui recommandé en {lang_name(plan.language)}"
+            plan.detail = f"the current logo is already the recommended {lang_name(plan.language)} one"
             return plan
 
         index, candidate, method = find_candidate(plex, logos, plan.target_url, target_size)
         if candidate is not None:
             plan.index, plan.candidate = index, candidate
-            log(f"  Trouvé sur Plex  : candidat n°{index + 1} sur {len(logos)} ({candidate.provider}), {method}")
+            log(f"  Found on Plex    : candidate #{index + 1} of {len(logos)} ({candidate.provider}), {method}")
             plan.target_url = None
         else:
-            log(f"  Trouvé sur Plex  : non ({method}), il sera ajouté depuis son lien")
-        plan.chosen = f"logo {lang_name(plan.language)} {fmt_size(target_size)} px"
+            log(f"  Found on Plex    : no ({method}), it will be uploaded from its link")
+        plan.chosen = f"{lang_name(plan.language)} logo {fmt_size(target_size)} px"
 
     plan.category = "replace" if plan.current is not None else "add"
     plan.detail = plan.chosen
     if plan.current is not None:
-        plan.detail += f", à la place du n°{plan.current_index + 1}" + (" (québécois)" if plan.current_is_qc else "")
+        plan.detail += f", instead of #{plan.current_index + 1}" + (" (Quebec)" if plan.current_is_qc else "")
     if plan.mention:
         plan.detail += f"  [{MENTIONS[plan.mention][0]}]"
     return plan
@@ -712,7 +712,7 @@ def html_card(plex, section, item, label, plan, cats, decidable):
         after = thumb(plex, plan.candidate if plan.candidate is not None else plan.target_url)
     category_label = cats.get(plan.category, CATEGORIES[plan.category])[1]
     if plan.category == "locked" and plan.current_is_qc:
-        category_label = "Logo verrouillé qui semble québécois (--fix-locked-quebec pour le remplacer)"
+        category_label = "Locked logo that looks like a Quebec logo (--fix-locked-quebec to replace it)"
     mention_label = MENTIONS[plan.mention][0].capitalize() if plan.mention else ""
     return html_report.card(section.title, item, label, plan, before, after, decidable,
                             category_label, mention_label)
@@ -722,7 +722,7 @@ def load_choices(path):
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
     if data.get("format") not in html_report.CHOICES_FORMATS:
-        raise SystemExit(f"[!] {path} n'est pas un fichier de choix de la page de contrôle.")
+        raise SystemExit(f"[!] {path} is not a choices file from the review page.")
     return data.get("decisions", {})
 
 
@@ -758,7 +758,7 @@ def process_library(plex, section, log, opts, ctx):
             if ctx.choices is not None:
                 decision = ctx.choices.get(str(item.ratingKey))
                 if decision is None:
-                    status("unreviewed", "ce titre n'était pas dans la page de contrôle")
+                    status("unreviewed", "this title was not in the review page")
                     results["unreviewed"].append(label)
                     continue
                 if not decision.get("ok"):
@@ -766,7 +766,7 @@ def process_library(plex, section, log, opts, ctx):
                     results["refused"].append(label)
                     continue
                 if decision.get("target") != plan.target_id:
-                    status("changed", "le logo prévu n'est plus le même qu'à la simulation : relancer une simulation")
+                    status("changed", "the planned logo is no longer the same as in the dry run: run a new dry run")
                     results["changed"].append(label)
                     continue
 
@@ -782,17 +782,17 @@ def process_library(plex, section, log, opts, ctx):
                 ctx.changes += 1
                 status(plan.category, plan.detail)
                 if ctx.changes % BATCH_SIZE == 0:
-                    log(f"  (pause de {BATCH_PAUSE:.0f} s pour ménager le serveur)")
+                    log(f"  (pausing {BATCH_PAUSE:.0f} s to spare the server)")
                     time.sleep(BATCH_PAUSE)
                 else:
                     time.sleep(DELAY_AFTER_CHANGE)
             else:
                 status(plan.category, plan.detail)
 
-            note = lang_name(plan.language) if plan.language and plan.chosen.startswith("logo " + lang_name(plan.language)) \
-                else "choisi par OCR"
+            note = lang_name(plan.language) if plan.language and plan.chosen.startswith(lang_name(plan.language) + " logo") \
+                else "picked by OCR"
             if plan.current_is_qc:
-                note += ", remplace un logo québécois"
+                note += ", replaces a Quebec logo"
             results[plan.category].append(f"{label} ({note})")
             if plan.mention:
                 results[plan.mention].append(label)
@@ -804,7 +804,7 @@ def process_library(plex, section, log, opts, ctx):
             if is_unauthorized(e):
                 raise TokenError(str(e)) from e
             status("error", str(e))
-            results["error"].append(f"{label} : {e}")
+            results["error"].append(f"{label}: {e}")
 
     return results
 
@@ -813,21 +813,21 @@ def write_library_summary(log, name, results, opts, duration):
     cats = categories_for(opts)
     log("")
     log(LINE)
-    log(f"  RÉSUMÉ : {name}")
+    log(f"  SUMMARY: {name}")
     log(LINE)
-    log(f"  Durée : {minutes(duration)}")
+    log(f"  Duration: {minutes(duration)}")
     log("")
     write_counts(log, results, cats)
     for key in ("add", "replace", "check", "refused", "changed", "unreviewed", "none", "error"):
         if key in cats and results[key]:
             log("")
-            log(f"  {cats[key][1]} ({len(results[key])}) :")
+            log(f"  {cats[key][1]} ({len(results[key])}):")
             for title in results[key]:
                 log(f"    - {title}")
     write_mentions(log, results)
     if not opts.apply and (results["add"] or results["replace"]):
         log("")
-        log("  Simulation uniquement : relance avec --apply pour appliquer.")
+        log("  Dry run only: run again with --apply to apply.")
     log(LINE)
 
 
@@ -863,15 +863,15 @@ def run(opts):
         stop(opts, summary, e)
         return
 
-    write_header(summary, "RÉSUMÉ GLOBAL — logos Plex", opts,
-                 [f"Serveur     : {server}", f"Dossier     : {run_dir}"])
+    write_header(summary, "OVERALL SUMMARY — Plex logos", opts,
+                 [f"Server      : {server}", f"Folder      : {run_dir}"])
 
     sections = {s.title: s for s in plex.library.sections()}
     missing = [name for name in TARGET_LIBRARIES if name not in sections]
     if missing:
         summary("")
-        summary(f"  [!] Bibliothèques introuvables : {', '.join(missing)}")
-        summary(f"      Disponibles : {', '.join(sections)}")
+        summary(f"  [!] Libraries not found: {', '.join(missing)}")
+        summary(f"      Available: {', '.join(sections)}")
 
     totals = empty_results()
     per_library = []
@@ -882,12 +882,12 @@ def run(opts):
             continue
         lib_start = time.time()
         log = Log(os.path.join(run_dir, safe_filename(name) + ".txt"), echo=not opts.quiet)
-        write_header(log, f"BIBLIOTHÈQUE : {name}", opts,
-                     [f"Contenu     : {section.totalSize} titre(s), langue {section.language}"])
+        write_header(log, f"LIBRARY: {name}", opts,
+                     [f"Content     : {section.totalSize} title(s), language {section.language}"])
         try:
             results = process_library(plex, section, log, opts, ctx)
         except TokenError as e:
-            log(f"\n[!] Arrêt : {e}")
+            log(f"\n[!] Stopped: {e}")
             log.close()
             stop(opts, summary, e)
             return
@@ -902,16 +902,16 @@ def run(opts):
             totals[key].extend(f"{name} > {t}" for t in results[key])
 
     # Per-library table
-    cols = [("add", "Ajout"), ("replace", "Rempl."), ("ok", "OK"), ("kept", "Gardé"),
-            ("locked", "Verrou"), ("none", "Aucun"), ("check", "Vérif."), ("error", "Erreur")]
+    cols = [("add", "Add"), ("replace", "Replace"), ("ok", "OK"), ("kept", "Kept"),
+            ("locked", "Locked"), ("none", "None"), ("check", "Check"), ("error", "Error")]
     if opts.choices:
-        cols[-1:-1] = [("refused", "Refusé"), ("changed", "Revoir"), ("unreviewed", "NonCtrl")]
-    cols += [("inferred", "Déduit"), ("original", "Origin."), ("unverified", "NonVérif")]
+        cols[-1:-1] = [("refused", "Rejected"), ("changed", "Recheck"), ("unreviewed", "NoReview")]
+    cols += [("inferred", "Inferred"), ("original", "Original"), ("unverified", "NotVerif")]
     name_w = max([len(n) for n, _ in per_library] + [12])
     summary("")
-    summary("  PAR BIBLIOTHÈQUE")
-    summary("  (Déduit / Origin. / NonVérif : mentions spéciales, déjà comptées dans Ajout ou Rempl.)")
-    summary("  " + "Bibliothèque".ljust(name_w) + "".join(f"{c:>9}" for _, c in cols))
+    summary("  PER LIBRARY")
+    summary("  (Inferred / Original / NotVerif: special mentions, already counted in Add or Replace)")
+    summary("  " + "Library".ljust(name_w) + "".join(f"{c:>9}" for _, c in cols))
     summary("  " + "-" * (name_w + 9 * len(cols)))
     for name, results in per_library:
         row = "".join(f"{len(results[k]) if results[k] else '-':>9}" for k, _ in cols)
@@ -928,31 +928,31 @@ def run(opts):
     for key in ("replace", "check", "refused", "changed", "unreviewed", "none", "error"):
         if key in cats and totals[key]:
             summary("")
-            summary(f"  {cats[key][1]} ({len(totals[key])}) :")
+            summary(f"  {cats[key][1]} ({len(totals[key])}):")
             for title in totals[key]:
                 summary(f"    - {title}")
     write_mentions(summary, totals)
     summary("")
-    summary(f"  Lectures OCR : {OCR.misses} nouvelles, {OCR.hits} reprises du cache.")
-    summary("  Détail titre par titre : un fichier par bibliothèque dans ce dossier.")
+    summary(f"  OCR reads: {OCR.misses} new, {OCR.hits} from the cache.")
+    summary("  Title-by-title details: one file per library in this folder.")
     to_do = len(totals["add"]) + len(totals["replace"])
     page = None
     if ctx.html:
         page = os.path.join(run_dir, "review.html")
         html_report.write(page, run_dir=os.path.basename(run_dir), apply=opts.apply, cards=ctx.html)
-        summary(f"  Page de contrôle : {page}")
+        summary(f"  Review page: {page}")
         if not opts.apply and to_do:
-            summary("  Ouvre-la, valide ou refuse chaque changement, puis exporte choices.json et lance :")
+            summary("  Open it, approve or reject each change, then export choices.json and run:")
             summary(f"    plex-smart-logo-updater.py --apply --choices {os.path.join(run_dir, 'choices.json')}")
     elif ctx.html is not None:
-        summary("  Page de contrôle : pas générée, il n'y a rien à valider.")
+        summary("  Review page: not generated, there is nothing to review.")
     if opts.apply:
         if to_do:
-            summary(f"  Pour tout annuler : plex-smart-logo-updater.py --undo {run_dir} --apply")
+            summary(f"  To undo everything: plex-smart-logo-updater.py --undo {run_dir} --apply")
     elif to_do:
-        summary("  Simulation uniquement : relance avec --apply pour appliquer.")
+        summary("  Dry run only: run again with --apply to apply.")
     else:
-        summary("  Rien à faire : tous les titres sont à jour.")
+        summary("  Nothing to do: all titles are up to date.")
     summary(LINE)
     summary.close()
 
@@ -963,16 +963,16 @@ def run(opts):
 def stop(opts, summary, error):
     """Stops on a connection error: clear message and notification."""
     if is_unauthorized(error):
-        message = f"Token Plex refusé : {TOKEN_FIX}"
+        message = f"Plex token rejected: {TOKEN_FIX}"
     else:
-        message = f"Connexion au serveur Plex impossible ({PLEX_URL}) : {error}"
+        message = f"Cannot connect to the Plex server ({PLEX_URL}): {error}"
     summary("")
     summary(f"  [!] {message}")
     summary(LINE)
     summary.close()
     if opts.notify and NOTIFY_TARGETS:
-        for kind, err in notifier.send(HTTP, NOTIFY_TARGETS, "Logos Plex : analyse impossible", message):
-            print(f"Notification {kind} : {'envoyée' if err is None else 'échec (' + err + ')'}")
+        for kind, err in notifier.send(HTTP, NOTIFY_TARGETS, "Plex logos: run failed", message):
+            print(f"Notification {kind}: {'sent' if err is None else 'failed (' + err + ')'}")
 
 
 def notify(opts, run_dir, totals, page, duration):
@@ -982,24 +982,24 @@ def notify(opts, run_dir, totals, page, duration):
     if not (to_do or totals["error"] or to_check):
         return
     if not NOTIFY_TARGETS:
-        print("[!] --notify : aucun webhook dans NOTIFY_URLS, pas de notification.")
+        print("[!] --notify: no webhook in NOTIFY_URLS, no notification sent.")
         return
-    verb = "appliqués" if opts.apply else "à valider"
-    title = f"Logos Plex : {to_do} changement(s) {verb}"
-    lines = [f"{len(totals['add'])} ajout(s), {len(totals['replace'])} logo(s) québécois remplacé(s)"]
+    verb = "applied" if opts.apply else "to review"
+    title = f"Plex logos: {to_do} change(s) {verb}"
+    lines = [f"{len(totals['add'])} addition(s), {len(totals['replace'])} Quebec logo(s) replaced"]
     if totals["unverified"]:
-        lines.append(f"{len(totals['unverified'])} non vérifié(s) par l'OCR, à regarder en priorité")
+        lines.append(f"{len(totals['unverified'])} not verified by OCR, look at them first")
     if to_check:
-        lines.append(f"{to_check} titre(s) à faire à la main")
+        lines.append(f"{to_check} title(s) to handle by hand")
     if totals["error"]:
-        lines.append(f"{len(totals['error'])} erreur(s)")
+        lines.append(f"{len(totals['error'])} error(s)")
     if page and not opts.apply and to_do:
-        lines.append(f"Page de contrôle : {page}")
-    lines.append(f"Logs : {os.path.basename(run_dir.rstrip('/'))} ({minutes(duration)})")
+        lines.append(f"Review page: {page}")
+    lines.append(f"Logs: {os.path.basename(run_dir.rstrip('/'))} ({minutes(duration)})")
     body = "\n".join(lines)
-    markdown = "\n".join(f"• {l}" if not l.startswith(("Page", "Logs")) else f"`{l}`" for l in lines)
+    markdown = "\n".join(f"• {l}" if not l.startswith(("Review page", "Logs")) else f"`{l}`" for l in lines)
     for kind, error in notifier.send(HTTP, NOTIFY_TARGETS, title, body, markdown):
-        print(f"Notification {kind} : {'envoyée' if error is None else 'échec (' + error + ')'}")
+        print(f"Notification {kind}: {'sent' if error is None else 'failed (' + error + ')'}")
 
 
 # ---------------------------------------------------------------------------
@@ -1015,23 +1015,23 @@ def undo(opts):
         with open(path, encoding="utf-8") as f:
             entries = json.load(f)["entries"]
     except (OSError, ValueError, KeyError) as e:
-        raise SystemExit(f"[!] Impossible de lire {path} : {e}")
+        raise SystemExit(f"[!] Cannot read {path}: {e}")
 
     mode = "undo" if opts.apply else "undo-simulation"
     run_dir = os.path.join(LOGS_DIR, time.strftime("%Y-%m-%d_%Hh%Mm%S") + "_" + mode)
     os.makedirs(run_dir, exist_ok=True)
     log = Log(os.path.join(run_dir, "_summary.txt"))
     log(LINE)
-    log(f"  ANNULATION de {opts.undo}")
+    log(f"  UNDO of {opts.undo}")
     log(LINE)
-    log(f"  Mode : {'APPLICATION (les logos sont restaurés)' if opts.apply else 'SIMULATION (rien n’est modifié)'}".replace("’", "'"))
-    log(f"  {len(entries)} changement(s) enregistré(s)")
+    log(f"  Mode: {'APPLY (logos are restored)' if opts.apply else 'DRY RUN (nothing is changed)'}")
+    log(f"  {len(entries)} recorded change(s)")
     log(LINE)
 
     try:
         plex = PlexServer(PLEX_URL, PLEX_TOKEN, session=HTTP)
     except Exception as ex:
-        log(f"  [!] {'Token Plex refusé : ' + TOKEN_FIX if is_unauthorized(ex) else ex}")
+        log(f"  [!] {'Plex token rejected: ' + TOKEN_FIX if is_unauthorized(ex) else ex}")
         log.close()
         return
     done, skipped, errors = [], [], []
@@ -1042,44 +1042,44 @@ def undo(opts):
             item = plex.fetchItem(int(e["ratingKey"]))
             now = selected_key(item)
             if now != e["after"]:
-                log("  ==> [IGNORÉ] le logo a été modifié depuis : on n'y touche pas")
+                log("  ==> [SKIPPED] the logo was changed since: left untouched")
                 skipped.append(e["title"])
                 continue
             if e["before"] is None:
-                what = "retirer le logo (il n'y en avait pas)"
+                what = "remove the logo (there was none)"
                 if opts.apply:
                     item.deleteLogo()
                     item.unlockLogo()
             else:
                 old = next((l for l in item.logos() if l.ratingKey == e["before"]), None)
                 if old is None:
-                    log("  ==> [IGNORÉ] l'ancien logo n'est plus proposé par Plex")
+                    log("  ==> [SKIPPED] Plex no longer offers the old logo")
                     skipped.append(e["title"])
                     continue
-                what = "remettre l'ancien logo"
+                what = "restore the old logo"
                 if opts.apply:
                     old.select()
                     if e["before_locked"]:
                         item.lockLogo()
                     else:
                         item.unlockLogo()
-            log(f"  ==> [{'RESTAURÉ' if opts.apply else 'À RESTAURER'}] {what}")
+            log(f"  ==> [{'RESTORED' if opts.apply else 'TO RESTORE'}] {what}")
             done.append(e["title"])
             if opts.apply:
                 time.sleep(DELAY_AFTER_CHANGE)
         except Exception as ex:
-            log(f"  ==> [ERREUR] {ex}")
-            errors.append(f"{e['title']} : {ex}")
+            log(f"  ==> [ERROR] {ex}")
+            errors.append(f"{e['title']}: {ex}")
 
     log("")
     log(LINE)
-    log(f"  {'Restaurés' if opts.apply else 'À restaurer'} : {len(done)} | ignorés : {len(skipped)} | erreurs : {len(errors)}")
+    log(f"  {'Restored' if opts.apply else 'To restore'}: {len(done)} | skipped: {len(skipped)} | errors: {len(errors)}")
     for t in skipped:
-        log(f"    - ignoré : {t}")
+        log(f"    - skipped: {t}")
     for t in errors:
-        log(f"    - erreur : {t}")
+        log(f"    - error: {t}")
     if not opts.apply:
-        log(f"  Simulation uniquement : relance avec --undo {opts.undo} --apply pour restaurer.")
+        log(f"  Dry run only: run again with --undo {opts.undo} --apply to restore.")
     log(LINE)
     log.close()
 
@@ -1087,7 +1087,7 @@ def undo(opts):
 if __name__ == "__main__":
     options = parse_args()
     if options.include_locked and not options.replace:
-        raise SystemExit("[!] --include-locked s'utilise avec --replace.")
+        raise SystemExit("[!] --include-locked requires --replace.")
     if options.undo:
         undo(options)
     else:

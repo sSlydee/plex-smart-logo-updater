@@ -2,7 +2,6 @@
 Review page (review.html): a single self-contained file with embedded images,
 no link to the Plex server and no token. Open it in a browser, approve or
 reject each change, then export choices.json for --choices.
-The page itself is in French, like the rest of the user-facing messages.
 """
 import base64
 import html
@@ -51,7 +50,7 @@ def write(path, run_dir, apply, cards):
         "format": CHOICES_FORMAT,
         "simulation": run_dir,
         "apply": apply,
-        "generated": time.strftime("%d/%m/%Y à %H:%M"),
+        "generated": time.strftime("%Y-%m-%d %H:%M"),
         "cards": cards,
     }
     payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
@@ -61,11 +60,11 @@ def write(path, run_dir, apply, cards):
 
 
 TEMPLATE = r"""<!DOCTYPE html>
-<html lang="fr">
+<html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Contrôle des logos</title>
+<title>Logo review</title>
 <style>
 :root {
   --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5f6878; --line: #dde1e7;
@@ -144,7 +143,7 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
 </head>
 <body>
 <header>
-  <h1>Contrôle des logos Plex</h1>
+  <h1>Plex logo review</h1>
   <div class="sub" id="sub"></div>
   <div class="steps" id="steps"></div>
 </header>
@@ -152,9 +151,9 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
 <main id="grid"></main>
 <footer id="footer"><div class="foot-in">
   <div class="counts" id="counts"></div>
-  <button class="btn" id="all-ok">Tout valider (filtre)</button>
-  <button class="btn" id="all-no">Tout refuser (filtre)</button>
-  <button class="btn primary" id="export">Exporter choices.json</button>
+  <button class="btn" id="all-ok">Approve all (filter)</button>
+  <button class="btn" id="all-no">Reject all (filter)</button>
+  <button class="btn primary" id="export">Export choices.json</button>
 </div></footer>
 <script type="application/json" id="data">__DATA__</script>
 <script>
@@ -171,35 +170,35 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
 
   const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
 
-  // En-tête
+  // Header
   document.getElementById("sub").textContent =
-    (DATA.apply ? "Application" : "Simulation") + " du " + DATA.generated + " — " + DATA.simulation;
+    (DATA.apply ? "Apply run" : "Dry run") + " of " + DATA.generated + " — " + DATA.simulation;
   const steps = document.getElementById("steps");
   if (DATA.apply) {
-    steps.innerHTML = "<b>Page de consultation :</b> ces changements ont déjà été appliqués à Plex. " +
-      "Pour les annuler : <code>plex-smart-logo-updater.py --undo logs/" + esc(DATA.simulation) + " --apply</code>";
+    steps.innerHTML = "<b>Read-only page:</b> these changes have already been applied to Plex. " +
+      "To undo them: <code>plex-smart-logo-updater.py --undo logs/" + esc(DATA.simulation) + " --apply</code>";
     document.getElementById("footer").style.display = "none";
     document.body.style.paddingBottom = "16px";
   } else {
-    steps.innerHTML = "<b>Comment faire :</b><ol>" +
-      "<li>Regarde chaque changement. Tout est <b>validé</b> par défaut : clique sur <b>Refuser</b> pour ceux que tu ne veux pas. Les filtres aident à commencer par les cas douteux (<b>Non vérifié</b>).</li>" +
-      "<li>Clique sur <b>Exporter choices.json</b> (en bas).</li>" +
-      "<li>Copie <code>choices.json</code> sur la seedbox, dans <code>logs/" + esc(DATA.simulation) + "/</code>.</li>" +
-      "<li>Lance : <code>plex-smart-logo-updater.py --apply --choices logs/" + esc(DATA.simulation) + "/choices.json</code></li></ol>" +
-      "Tes choix sont gardés dans ce navigateur si tu fermes la page.";
+    steps.innerHTML = "<b>How to:</b><ol>" +
+      "<li>Look at each change. Everything is <b>approved</b> by default: click <b>Reject</b> on the ones you do not want. The filters help you start with the doubtful cases (<b>Not verified</b>).</li>" +
+      "<li>Click <b>Export choices.json</b> (at the bottom).</li>" +
+      "<li>Copy <code>choices.json</code> to the server, into <code>logs/" + esc(DATA.simulation) + "/</code>.</li>" +
+      "<li>Run: <code>plex-smart-logo-updater.py --apply --choices logs/" + esc(DATA.simulation) + "/choices.json</code></li></ol>" +
+      "Your choices are kept in this browser if you close the page.";
   }
 
-  // Filtres
+  // Filters
   const FILTERS = [
-    ["all", "Tout", c => true],
-    ["unverified", "Non vérifié", c => c.mention === "unverified"],
-    ["quebec", "Québécois remplacé", c => c.quebec && c.decidable],
-    ["original", "Titre original", c => c.mention === "original"],
-    ["inferred", "Français déduit", c => c.mention === "inferred"],
-    ["add", "Ajouts", c => c.category === "add"],
-    ["replace", "Remplacements", c => c.category === "replace"],
-    ["refused", "Refusés", c => c.decidable && decisions[c.id] === false],
-    ["info", "À faire à la main", c => !c.decidable],
+    ["all", "All", c => true],
+    ["unverified", "Not verified", c => c.mention === "unverified"],
+    ["quebec", "Quebec replaced", c => c.quebec && c.decidable],
+    ["original", "Original title", c => c.mention === "original"],
+    ["inferred", "French inferred", c => c.mention === "inferred"],
+    ["add", "Additions", c => c.category === "add"],
+    ["replace", "Replacements", c => c.category === "replace"],
+    ["refused", "Rejected", c => c.decidable && decisions[c.id] === false],
+    ["info", "To do by hand", c => !c.decidable],
   ];
   let filter = "all", query = "", library = "", bg = "dark";
   const toolbar = document.getElementById("toolbar");
@@ -211,10 +210,10 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
       if (DATA.apply && k === "refused") return "";
       return `<button class="chip" data-f="${k}" aria-pressed="${filter === k}">${label}<span class="n">${n}</span></button>`;
     }).join("") +
-      `<input type="search" id="q" placeholder="Rechercher un titre…" value="${esc(query)}">` +
-      (libs.length > 1 ? `<select id="lib"><option value="">Toutes les bibliothèques</option>` +
+      `<input type="search" id="q" placeholder="Search a title…" value="${esc(query)}">` +
+      (libs.length > 1 ? `<select id="lib"><option value="">All libraries</option>` +
         libs.map(l => `<option ${l === library ? "selected" : ""}>${esc(l)}</option>`).join("") + `</select>` : "") +
-      `<select id="bg" title="Fond des logos"><option value="dark">Fond sombre</option><option value="light">Fond clair</option><option value="check">Damier</option></select>`;
+      `<select id="bg" title="Logo background"><option value="dark">Dark background</option><option value="light">Light background</option><option value="check">Checkerboard</option></select>`;
     toolbar.querySelectorAll(".chip").forEach(b => b.onclick = () => { filter = b.dataset.f; renderToolbar(); renderGrid(); });
     const q = toolbar.querySelector("#q");
     q.oninput = () => { query = q.value.toLowerCase(); renderGrid(); };
@@ -239,25 +238,25 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
   function cardHtml(c) {
     const state = !c.decidable ? "info" : (decisions[c.id] ? "ok" : "no");
     const badges = [`<span class="badge">${esc(c.categoryLabel)}</span>`];
-    if (c.quebec) badges.push(`<span class="badge qc">Logo actuel québécois</span>`);
+    if (c.quebec) badges.push(`<span class="badge qc">Current logo is Quebec</span>`);
     if (c.mention) badges.push(`<span class="badge warn">${esc(c.mentionLabel)}</span>`);
-    const titles = c.fr ? `<div class="titles">France <b>${esc(c.fr)}</b> · Québec <b>${esc(c.ca)}</b>` +
+    const titles = c.fr ? `<div class="titles">France <b>${esc(c.fr)}</b> · Quebec <b>${esc(c.ca)}</b>` +
       (c.en ? ` · original <b>${esc(c.en)}</b>` : "") + `</div>` : "";
     const actions = c.decidable && !DATA.apply ?
-      `<div class="actions"><button data-id="${c.id}" data-v="1" class="${decisions[c.id] ? "sel-ok" : ""}">✓ Valider</button>` +
-      `<button data-id="${c.id}" data-v="0" class="${decisions[c.id] ? "" : "sel-no"}">✗ Refuser</button></div>` :
-      (!c.decidable ? `<div class="infonote">Rien ne sera modifié : à faire à la main dans Plex.</div>` : "");
+      `<div class="actions"><button data-id="${c.id}" data-v="1" class="${decisions[c.id] ? "sel-ok" : ""}">✓ Approve</button>` +
+      `<button data-id="${c.id}" data-v="0" class="${decisions[c.id] ? "" : "sel-no"}">✗ Reject</button></div>` :
+      (!c.decidable ? `<div class="infonote">Nothing will be changed: do it by hand in Plex.</div>` : "");
     return `<article class="card ${state}"><div><h2>${esc(c.title)}</h2><div class="lib">${esc(c.library)}</div></div>` +
       `<div class="badges">${badges.join("")}</div>` +
-      `<div class="logos">${logoBox(c.before, "avant", "aucun logo")}<span class="arrow">→</span>` +
-      `${logoBox(c.after, "après", c.decidable ? "image indisponible" : "aucun changement")}</div>` +
+      `<div class="logos">${logoBox(c.before, "before", "no logo")}<span class="arrow">→</span>` +
+      `${logoBox(c.after, "after", c.decidable ? "image unavailable" : "no change")}</div>` +
       titles + `<div class="detail">${esc(c.detail)}</div>` + actions + `</article>`;
   }
 
   const grid = document.getElementById("grid");
   function renderGrid() {
     const list = visible();
-    grid.innerHTML = list.length ? list.map(cardHtml).join("") : `<div class="empty">Aucun titre pour ce filtre.</div>`;
+    grid.innerHTML = list.length ? list.map(cardHtml).join("") : `<div class="empty">No title for this filter.</div>`;
     grid.querySelectorAll(".actions button").forEach(b => b.onclick = () => {
       decisions[b.dataset.id] = b.dataset.v === "1"; persist(); renderGrid(); renderCounts();
       if (filter === "refused") renderToolbar();
@@ -268,7 +267,7 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
   function renderCounts() {
     const ok = decidable.filter(c => decisions[c.id]).length;
     document.getElementById("counts").innerHTML =
-      `<span class="o">${ok}</span> validé(s) · <span class="x">${decidable.length - ok}</span> refusé(s) sur ${decidable.length}`;
+      `<span class="o">${ok}</span> approved · <span class="x">${decidable.length - ok}</span> rejected out of ${decidable.length}`;
   }
 
   function setAll(v) {

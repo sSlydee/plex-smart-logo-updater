@@ -6,7 +6,6 @@ library it may pick a Quebec logo ("Le financier" instead of "The Banker").
 The logo text is read and compared with the French, Quebec and original titles.
 
 The verdict is deliberately cautious: when in doubt, it answers UNKNOWN.
-Verdict values are French strings because they are shown in the (French) logs.
 """
 import os
 
@@ -23,7 +22,7 @@ from PIL import Image, ImageOps
 
 _ENGINE = None
 
-QC, FR, FR_GUESS, ORIGINAL, UNKNOWN = "québécois", "français", "français (déduit)", "titre original", "incertain"
+QC, FR, FR_GUESS, ORIGINAL, UNKNOWN = "Quebec", "French", "French (inferred)", "original title", "uncertain"
 
 # Preference between acceptable logos (higher is better)
 PREFERENCE = {FR: 3, FR_GUESS: 2, ORIGINAL: 1}

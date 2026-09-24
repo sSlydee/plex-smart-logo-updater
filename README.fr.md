@@ -2,6 +2,8 @@
 
 **Des logos Plex (ClearLogo) mieux choisis : en français d'abord, une langue de repli, et pas de logos québécois.**
 
+L'interface du script (messages, logs, page de contrôle, assistant) est en anglais. Cette page en décrit le fonctionnement en français.
+
 🇬🇧 [English version](README.md)
 
 Script Python qui ajoute automatiquement un **logo de qualité, en français de préférence**, aux films et séries de Plex qui n'en ont pas. Il remplace aussi les **logos québécois** que Plex pose par erreur.
@@ -39,7 +41,7 @@ Pour chaque titre, le script compare le titre français (fr-FR) et le titre qué
   4. le plus grand.
 - Quand le titre français diffère du titre original et que le logo recommandé par Plex n'est pas clairement français (logo anglais, illisible…), le script cherche un logo au titre français parmi les autres (ex. « HAPPY BIRTHDEAD » plutôt que « HAPPY DEATH DAY »). Si le titre est le même en France et en version originale, le choix de Plex est gardé.
 - **Un logo québécois n'est jamais ajouté.** Si Plex recommande un logo québécois, le script cherche un autre logo parmi ceux proposés.
-- S'il n'existe **que** des logos québécois, le titre est marqué `[À VÉRIFIER]` : à faire à la main.
+- S'il n'existe **que** des logos québécois, le titre est marqué `[CHECK]` : à faire à la main.
 - Un logo **verrouillé** qui semble québécois est signalé dans les logs. Il n'est remplacé qu'avec `--fix-locked-quebec`.
 - Quand le Québec garde le titre original (« Black Box Diaries »), un logo à ce titre n'est **pas** considéré comme québécois.
 
@@ -49,9 +51,9 @@ Trois **mentions spéciales** signalent les logos posés avec moins de certitude
 
 | Mention | Signification |
 |---|---|
-| `[FRANÇAIS DÉDUIT]` | Le titre français est lu sur le logo et les mots propres au titre québécois en sont absents (ex. « PUSH », alors que le Québec dit « Push : La division »). Très probablement correct. |
-| `[TITRE ORIGINAL]` | Le logo porte le titre original, ni français ni québécois (ex. « HAPPY DEATH DAY » pour *Happy Birthdead*). |
-| `[NON VÉRIFIÉ]` | L'OCR n'a pas pu lire le logo (police trop stylisée, lettres espacées…). Le logo est posé quand même, comme Plex l'aurait fait : **à contrôler**. |
+| `[FRENCH INFERRED]` (français déduit) | Le titre français est lu sur le logo et les mots propres au titre québécois en sont absents (ex. « PUSH », alors que le Québec dit « Push : La division »). Très probablement correct. |
+| `[ORIGINAL TITLE]` (titre original) | Le logo porte le titre original, ni français ni québécois (ex. « HAPPY DEATH DAY » pour *Happy Birthdead*). |
+| `[NOT VERIFIED]` (non vérifié) | L'OCR n'a pas pu lire le logo (police trop stylisée, lettres espacées…). Le logo est posé quand même, comme Plex l'aurait fait : **à contrôler**. |
 
 Les lectures OCR sont gardées dans un cache (`.cache-ocr.json`) : une relance ne relit que les nouveaux logos.
 
@@ -71,7 +73,7 @@ L'installateur remplace OpenCV 5, installé avec l'OCR, par une version plus anc
 
 ## Configuration
 
-L'assistant pose quelques questions et écrit `config.env` à côté du script :
+L'assistant pose quelques questions (en anglais) et écrit `config.env` à côté du script :
 
 1. l'adresse du serveur Plex et ton token, avec un **test de connexion** ;
 2. les bibliothèques à traiter, choisies dans la **liste de ton serveur** ;
@@ -99,7 +101,7 @@ Pour ne refaire qu'une étape :
 
 Un nouveau token n'est enregistré que si la connexion à Plex réussit avec lui.
 
-**Si ton token change**, le script le détecte : il s'arrête avec le message « Token Plex refusé : change-le avec : .venv/bin/python configure.py --token ». Avec `--notify`, comme lors d'une analyse automatique, ce message t'est aussi envoyé par notification.
+**Si ton token change**, le script le détecte : il s'arrête avec le message « Plex token rejected: change it with: .venv/bin/python configure.py --token ». Avec `--notify`, comme lors d'une analyse automatique, ce message t'est aussi envoyé par notification.
 
 `config.env` contient ton token : l'assistant le rend lisible par toi seul. Tu peux aussi l'écrire à la main à partir de `config.env.example`.
 
@@ -174,10 +176,10 @@ Le script crée `review.html` dans le dossier de logs de la simulation.
 **2. Contrôle sur ton PC :** télécharge `review.html` (SFTP, gestionnaire de fichiers web…) et ouvre-le dans ton navigateur. C'est un fichier autonome : les images sont incluses, il ne contient ni lien vers ton serveur ni token.
 
 - Chaque changement s'affiche avec l'ancien et le nouveau logo.
-- Tout est **validé** par défaut : clique sur **Refuser** pour ceux que tu ne veux pas.
-- Les filtres permettent de commencer par les cas douteux (« Non vérifié », « Titre original »…).
+- Tout est **validé** par défaut : clique sur **Reject** pour ceux que tu ne veux pas.
+- Les filtres permettent de commencer par les cas douteux (« Not verified », « Original title »…).
 - Tes choix sont gardés dans le navigateur si tu fermes la page.
-- Clique sur **Exporter choices.json**.
+- Clique sur **Export choices.json**.
 
 **3. Application :** copie `choices.json` sur la seedbox, dans le dossier de la simulation, puis :
 
@@ -185,7 +187,7 @@ Le script crée `review.html` dans le dossier de logs de la simulation.
 .venv/bin/python plex-smart-logo-updater.py --apply --choices logs/<dossier de la simulation>/choices.json
 ```
 
-Seuls les changements validés sont appliqués. Un titre refusé est marqué `[REFUSÉ]`. Si le logo prévu a changé depuis la simulation, le titre est marqué `[À REVOIR]` et n'est pas modifié.
+Seuls les changements validés sont appliqués. Un titre refusé est marqué `[REJECTED]`. Si le logo prévu a changé depuis la simulation, le titre est marqué `[RECHECK]` et n'est pas modifié.
 
 ### Annuler une application
 
@@ -220,43 +222,43 @@ Dans le détail, chaque titre se termine par une étiquette :
 
 | Étiquette | Signification |
 |---|---|
-| `[À AJOUTER]` / `[AJOUT]` | Aucun logo actuellement, un logo va être / a été posé |
-| `[À REMPLACER]` / `[REMPLACÉ]` | Le logo actuel va être / a été remplacé (logo québécois, ou avec `--replace`) |
+| `[TO ADD]` / `[ADDED]` | Aucun logo actuellement, un logo va être / a été posé |
+| `[TO REPLACE]` / `[REPLACED]` | Le logo actuel va être / a été remplacé (logo québécois, ou avec `--replace`) |
 | `[OK]` | Déjà le bon logo, rien à faire (uniquement avec `--replace`) |
-| `[CONSERVÉ]` | Un logo est déjà en place : ignoré |
-| `[VERROUILLÉ]` | Logo choisi à la main : ignoré |
-| `[AUCUN]` | Plex ne recommande aucun logo, ni en français ni en anglais : ignoré |
-| `[À VÉRIFIER]` | Seul un logo québécois est disponible : à faire à la main |
-| `[REFUSÉ]` | Avec `--choices` : refusé dans la page de contrôle |
-| `[À REVOIR]` | Avec `--choices` : le logo prévu a changé depuis la simulation |
-| `[NON CONTRÔLÉ]` | Avec `--choices` : titre absent du fichier de choix (nouveau depuis la simulation) |
-| `[ERREUR]` | Erreur (le message est indiqué) |
+| `[KEPT]` | Un logo est déjà en place : ignoré |
+| `[LOCKED]` | Logo choisi à la main : ignoré |
+| `[NONE]` | Plex ne recommande aucun logo dans les langues demandées : ignoré |
+| `[CHECK]` | Seul un logo québécois est disponible : à faire à la main |
+| `[REJECTED]` | Avec `--choices` : refusé dans la page de contrôle |
+| `[RECHECK]` | Avec `--choices` : le logo prévu a changé depuis la simulation |
+| `[NOT REVIEWED]` | Avec `--choices` : titre absent du fichier de choix (nouveau depuis la simulation) |
+| `[ERROR]` | Erreur (le message est indiqué) |
 
-Mentions possibles après l'étiquette : `[FRANÇAIS DÉDUIT]`, `[TITRE ORIGINAL]` et `[NON VÉRIFIÉ]` (voir plus haut).
+Mentions possibles après l'étiquette : `[FRENCH INFERRED]`, `[ORIGINAL TITLE]` et `[NOT VERIFIED]` (voir plus haut).
 
 Exemple :
 
 ```
 [1/3] BNA (2020)
-  Logo actuel      : aucun
-  Recherche Plex   : français : aucun | anglais : trouvé
-  Logo recommandé  : anglais, 618x239 px
-  Lien de l'image  : https://metadata-static.plex.tv/...png
-  Trouvé sur Plex  : candidat n°3 sur 7 (tmdb), même URL
-  ==> [À AJOUTER] logo anglais 618x239 px
+  Current logo     : none
+  Plex search      : French: none | English: found
+  Recommended logo : English, 618x239 px
+  Image link       : https://metadata-static.plex.tv/...png
+  Found on Plex    : candidate #3 of 7 (tmdb), same URL
+  ==> [TO ADD] English logo 618x239 px
 ```
 
 Exemple de logo québécois remplacé :
 
 ```
 [52/303] Bullet Train (2022)
-  Logo actuel      : n°8 sur 18 (tmdb), posé automatiquement par Plex
-  Titres           : France « Bullet Train » | Québec « Train à grande vitesse » | original « Bullet Train »
-  Lecture du logo  : « TRAIN A C GRANDE VITESSE » -> québécois
-  Recherche Plex   : français : trouvé
-  Lecture reco.    : « TRAIN A C GRANDE VITESSE » -> québécois
-  Choix par OCR    : candidat n°4 sur 18 (tmdb), « BULLET TRAIT » -> français
-  ==> [À REMPLACER] logo « BULLET TRAIT » (français), à la place du n°8 (québécois)
+  Current logo     : #8 of 18 (tmdb), set automatically by Plex
+  Titles           : France "Bullet Train" | Quebec "Train à grande vitesse" | original "Bullet Train"
+  Logo reads       : "TRAIN A C GRANDE VITESSE" -> Quebec
+  Plex search      : French: found
+  Recommended reads: "TRAIN A C GRANDE VITESSE" -> Quebec
+  OCR choice       : candidate #4 of 18 (tmdb), "BULLET TRAIT" -> French
+  ==> [TO REPLACE] logo "BULLET TRAIT" (French), instead of #8 (Quebec)
 ```
 
 L'OCR ne lit pas toujours parfaitement (ici « TRAIT » au lieu de « TRAIN »), mais la comparaison tolère ces petites erreurs.
@@ -268,7 +270,7 @@ La première simulation est plus longue sur les bibliothèques de films (environ
 - Un logo sélectionné par le script devient **verrouillé**, comme un choix manuel. Plex ne le remplacera donc plus lors des actualisations, et le script l'ignorera lors des lancements suivants.
 - Rien n'est supprimé : l'ancien logo reste disponible dans Plex (*Modifier > Logo*).
 - Seul le logo principal du film ou de la série est traité, pas ceux des saisons ou des épisodes.
-- Pour les titres marqués `[AUCUN]` ou `[À VÉRIFIER]`, il faut choisir un logo à la main dans Plex ou en importer un.
+- Pour les titres marqués `[NONE]` ou `[CHECK]`, il faut choisir un logo à la main dans Plex ou en importer un.
 - `config.env`, les dossiers `logs/`, `.venv/` et le cache `.cache-ocr.json` ne sont pas à publier (voir `.gitignore`) : ils contiennent ton token ou la liste de tes titres.
 
 ## Licence
