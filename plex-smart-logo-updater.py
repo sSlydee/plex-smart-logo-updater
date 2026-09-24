@@ -49,6 +49,8 @@ import notify as notifier
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
+__version__ = "1.0.0"
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
@@ -89,6 +91,7 @@ def parse_args():
   plex-smart-logo-updater.py --apply                  apply everything
   plex-smart-logo-updater.py --undo logs/<application> [--apply]
                                            undo an application (dry run without --apply)""")
+    p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     p.add_argument("--apply", action="store_true", help="actually change Plex (otherwise: dry run)")
     p.add_argument("--html", action="store_true",
                    help="write the review page review.html in the logs folder")

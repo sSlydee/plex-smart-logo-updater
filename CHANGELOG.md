@@ -1,0 +1,31 @@
+# Changelog
+
+All notable changes to this project are documented here.
+The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
+
+## [1.0.0] - 2026-09-24
+
+First release.
+
+### Logo selection
+- Sets on titles without a logo the logo Plex itself recommends for the library language, with fallback languages (`PLEX_LANGUAGES`, French then English by default), and finds it among the server's candidates.
+- Never touches hand-picked (locked) logos, nor logos already set by Plex unless they are Quebec logos.
+
+### Quebec (French-Canadian) logo detection
+- Reads logo text with OCR when the Quebec title differs from the French one.
+- Replaces Quebec logos set by Plex with the logo closest to the full French title, otherwise the original title; prefers logos without extra text (actor names, taglines), then the same style (colored or white), then Plex's pick, then the largest.
+- Never adds a Quebec logo; titles with only Quebec logos are reported for manual handling.
+- Special mentions for less certain picks: French inferred, original title, not verified.
+- OCR results are cached (`.cache-ocr.json`).
+
+### Safety and review
+- Dry run by default; `--apply` to change Plex.
+- Self-contained HTML review page (`--html`): approve or reject each change, export `choices.json`, apply only approved changes with `--choices`.
+- Undo journal (`undo.json`) for every application, and `--undo` to restore the previous state.
+- Per-library logs with a summary, automatic pruning of old dry-run logs (`PLEX_LOGS_KEEP`).
+
+### Setup and automation
+- `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
+- Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
+
+[1.0.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.0.0
