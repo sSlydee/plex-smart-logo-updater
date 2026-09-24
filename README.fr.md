@@ -1,14 +1,14 @@
 # plex-smart-logo-updater
 
-**Des logos Plex (ClearLogo) mieux choisis : en français d'abord, une langue de repli, et pas de logos québécois.**
+**Des logos Plex (ClearLogo) mieux choisis : le bon logo dans la langue de chaque bibliothèque, l'anglais en secours, et pas de logos québécois dans les bibliothèques françaises.**
 
 L'interface du script (messages, logs, page de contrôle, assistant) est en anglais. Cette page en décrit le fonctionnement en français.
 
 🇬🇧 [English version](README.md)
 
-Script Python qui ajoute automatiquement un **logo de qualité, en français de préférence**, aux films et séries de Plex qui n'en ont pas. Il remplace aussi les **logos québécois** que Plex pose par erreur.
+Script Python qui donne à tes films et séries Plex un **logo de qualité dans la langue de leur bibliothèque**, y compris aux nombreux titres que Plex laisse sans logo. Pour les bibliothèques en français, il repère et remplace aussi les **logos québécois** que Plex pose parfois par erreur.
 
-Par défaut, chaque bibliothèque utilise **sa propre langue** (celle réglée dans Plex), puis l'anglais : une bibliothèque en français reçoit des logos français, une bibliothèque allemande des logos allemands, une bibliothèque anglaise des logos anglais. La détection des logos québécois ne concerne que les bibliothèques en français.
+Chaque changement est d'abord prévisualisé : simulation, page de contrôle pour valider ou refuser chaque logo, et journal d'annulation.
 
 Basé sur [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-logo-updater) (licence MIT).
 
@@ -16,11 +16,13 @@ Basé sur [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-lo
 
 ## Le problème
 
-Plex ne pose un logo automatiquement **que s'il en existe un dans la langue de la bibliothèque**. Dans une bibliothèque en français, un titre sans logo français reste donc sans logo, même si de bons logos en anglais existent. C'est très fréquent pour les animes.
+Plex ne pose un logo automatiquement **que s'il en existe un dans la langue de la bibliothèque**. Dans une bibliothèque en français, en allemand ou en espagnol, un titre sans logo dans cette langue reste donc sans logo, même s'il en existe un bon en anglais. C'est très fréquent pour les animes et les films étrangers.
 
-Autre piège : **Plex ne distingue pas le français de France du français du Québec.** Il peut poser un logo québécois dans une bibliothèque française. Le titre affiché est alors « The Banker » alors que le logo indique « Le financier » ; de même, « Edge of Tomorrow » peut s'afficher avec le logo « Un jour sans lendemain ».
+Les bibliothèques en français ont un second piège : **Plex ne distingue pas le français de France du français du Québec.** Il peut poser un logo québécois dans une bibliothèque française. Le titre affiché est alors « The Banker » alors que le logo indique « Le financier » ; de même, « Edge of Tomorrow » peut s'afficher avec le logo « Un jour sans lendemain ».
 
-Le script d'origine se contentait de prendre le premier logo de la liste. Ce logo peut être en chinois ou en japonais, ou de mauvaise qualité.
+Le script d'origine se contentait de prendre le premier logo de la liste, qui peut être dans la mauvaise langue ou de mauvaise qualité.
+
+Par défaut, chaque bibliothèque utilise **sa propre langue** (celle réglée dans Plex), puis l'anglais : une bibliothèque en français reçoit des logos français, une bibliothèque allemande des logos allemands, une bibliothèque anglaise des logos anglais.
 
 ## Ce que fait `plex-smart-logo-updater.py`
 

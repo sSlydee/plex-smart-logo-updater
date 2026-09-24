@@ -1,12 +1,12 @@
 # plex-smart-logo-updater
 
-**Smarter Plex logos (ClearLogo): French first, a fallback language, and no Quebec logos.**
+**Smarter Plex logos (ClearLogo): the right logo in each library's language, with an English fallback, and no French-Canadian logos in French libraries.**
 
 🇫🇷 [Version française](README.fr.md)
 
-A Python script that automatically gives your Plex movies and shows a **good-quality logo, in French when possible**. It also replaces the **French-Canadian (Quebec) logos** that Plex sometimes picks by mistake.
+A Python script that gives your Plex movies and shows a **good-quality logo in the language of their library**, including the many titles Plex leaves without one. For French libraries, it also detects and replaces the **French-Canadian (Quebec) logos** that Plex sometimes picks by mistake.
 
-By default each library uses **its own language** (as set in Plex), then English: a French library gets French logos, a German one German logos, an English one English logos. The Quebec logo detection only applies to French libraries.
+Every change is previewed first: a dry run, a review page to approve or reject each logo, and an undo journal.
 
 Based on [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-logo-updater) (MIT license).
 
@@ -14,11 +14,13 @@ Based on [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-log
 
 ## The problem
 
-Plex only sets a logo automatically **when one exists in the library language**. In a French library, a title without a French logo therefore stays without a logo, even when good English logos exist. This is very common for anime.
+Plex only sets a logo automatically **when one exists in the library language**. In a French, German or Spanish library, a title without a logo in that language therefore stays without a logo, even when a good English one exists. This is very common for anime and foreign films.
 
-Another trap: **Plex does not tell French (France) from French (Quebec) apart.** It may set a Quebec logo in a French library. The title then reads "The Banker" while the logo says "Le financier"; likewise, "Edge of Tomorrow" may show up with the logo "Un jour sans lendemain".
+French libraries have a second trap: **Plex does not tell French (France) from French (Quebec) apart.** It may set a Quebec logo in a French library. The title then reads "The Banker" while the logo says "Le financier"; likewise, "Edge of Tomorrow" may show up with the logo "Un jour sans lendemain".
 
-The original script simply picked the first logo in the list, which may be in Chinese or Japanese, or of poor quality.
+The original script simply picked the first logo in the list, which may be in the wrong language or of poor quality.
+
+By default each library uses **its own language** (as set in Plex), then English: a French library gets French logos, a German one German logos, an English one English logos.
 
 ## What `plex-smart-logo-updater.py` does
 
