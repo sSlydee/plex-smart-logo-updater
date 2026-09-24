@@ -16,8 +16,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install test dependencies
-        # Only what the tested modules need: no Plex server, no OCR engine
-        run: pip install pytest "numpy<2" pillow requests
+        # Only what the tested code needs: no Plex server, no OCR engine
+        run: pip install pytest "numpy<2" pillow requests plexapi
       - name: Check that every script compiles
         run: python -m py_compile *.py
       - name: Check install.sh syntax

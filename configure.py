@@ -21,6 +21,9 @@ import shlex
 import subprocess
 import sys
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import envfile  # noqa: E402
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.environ.get("PLEX_CONFIG", os.path.join(HERE, "config.env"))
 CRON_TAG = "# plex-smart-logo-updater (managed by configure.py)"
@@ -87,41 +90,29 @@ def ask_choice(question, options, default=1):
 # config.env
 # ---------------------------------------------------------------------------
 
+KNOWN_KEYS = ("PLEX_URL", "PLEX_TOKEN", "PLEX_LIBRARIES", "PLEX_LANGUAGES", "NOTIFY_URLS")
+
+
 def read_config(path):
-    values = {}
-    try:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, value = line.split("=", 1)
-                    values[key.strip()] = value.strip().strip('"').strip("'")
-    except OSError:
-        pass
-    return values
+    return envfile.parse(path)
 
 
 def write_config(path, values):
-    lines = [
-        "# plex-smart-logo-updater configuration, written by configure.py.",
-        "# Do not publish: this file contains your Plex token and webhooks.",
-        f"PLEX_URL={values['PLEX_URL']}",
-        f"PLEX_TOKEN={values['PLEX_TOKEN']}",
-        f"PLEX_LIBRARIES={values['PLEX_LIBRARIES']}",
-        f"PLEX_LANGUAGES={values['PLEX_LANGUAGES']}",
-        "# Webhooks for --notify (Discord, Bark or json:<url>), comma-separated",
-        f"NOTIFY_URLS={values.get('NOTIFY_URLS', '')}",
-    ]
-    for key in ("PLEX_LOGS_DIR", "PLEX_OCR_CACHE"):
-        if values.get(key):
-            lines.append(f"{key}={values[key]}")
-    old_umask = os.umask(0o077)
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
-    finally:
-        os.umask(old_umask)
-    os.chmod(path, 0o600)
+    """Writes config.env: the wizard's keys first, then every other key already in the file."""
+    ordered = {k: values.get(k, "") for k in KNOWN_KEYS}
+    ordered.update((k, v) for k, v in values.items() if k not in KNOWN_KEYS)
+    envfile.write(path, ordered,
+                  header=["plex-smart-logo-updater configuration, written by configure.py.",
+                          "Do not publish: this file contains your Plex token and webhooks."],
+                  comments={"NOTIFY_URLS": "Webhooks for --notify (Discord, Bark or json:<url>), comma-separated"})
+
+
+def parse_hour(text):
+    """Hour 0-23 from "6", "06", "6h", "06:00"…; None if it cannot be read."""
+    m = re.match(r"^\s*(\d{1,2})\s*(?:h|:\d{2})?\s*$", text or "", re.IGNORECASE)
+    if m and 0 <= int(m.group(1)) <= 23:
+        return int(m.group(1))
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -139,10 +130,11 @@ def connect(url, token):
     try:
         return PlexServer(url, token, session=session, timeout=15), None
     except Exception as e:
-        text = str(e)
-        if "401" in text or "nauthorized" in text:
-            text = "token rejected by the server (401)"
-        return None, text
+        from plexapi.exceptions import Unauthorized
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        if isinstance(e, Unauthorized) or status == 401:
+            return None, "token rejected by the server (401)"
+        return None, str(e)
 
 
 def step_token(values, token=None):
@@ -309,7 +301,11 @@ def step_cron():
     if choice == 0:
         new_lines = others
     else:
-        hour = int(ask("Hour (0-23)", "9") or 9) % 24
+        while True:
+            hour = parse_hour(ask("Hour (0-23)", "9"))
+            if hour is not None:
+                break
+            print("  Invalid hour, type a number between 0 and 23.")
         dow = "*"
         if choice == 2:
             day = ask_choice("Day", DAYS, 1)

@@ -40,6 +40,7 @@ def card(library, item, label, plan, current_thumb, new_thumb, decidable, catego
         "fr": fr, "ca": ca, "en": en,
         "target": plan.target_id if decidable else None,
         "before": current_thumb,
+        "hasBefore": plan.current is not None,
         "after": new_thumb,
         "decidable": decidable,
     }
@@ -248,7 +249,7 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
       (!c.decidable ? `<div class="infonote">Nothing will be changed: do it by hand in Plex.</div>` : "");
     return `<article class="card ${state}"><div><h2>${esc(c.title)}</h2><div class="lib">${esc(c.library)}</div></div>` +
       `<div class="badges">${badges.join("")}</div>` +
-      `<div class="logos">${logoBox(c.before, "before", "no logo")}<span class="arrow">→</span>` +
+      `<div class="logos">${logoBox(c.before, "before", c.hasBefore ? "image unavailable" : "no logo")}<span class="arrow">→</span>` +
       `${logoBox(c.after, "after", c.decidable ? "image unavailable" : "no change")}</div>` +
       titles + `<div class="detail">${esc(c.detail)}</div>` + actions + `</article>`;
   }

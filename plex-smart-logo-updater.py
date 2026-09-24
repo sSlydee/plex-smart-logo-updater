@@ -30,6 +30,7 @@ See --help for the options.
 """
 import argparse
 import atexit
+import collections
 import io
 import json
 import os
@@ -41,6 +42,7 @@ from urllib3.util.retry import Retry
 from PIL import Image, ImageChops
 from plexapi.server import PlexServer
 
+import envfile
 import quebec
 import html_report
 import notify as notifier
@@ -50,25 +52,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 
-def load_config(path):
-    """Reads a KEY=value file; environment variables that are already set take precedence."""
-    try:
-        with open(path, encoding="utf-8") as f:
-            lines = f.readlines()
-    except OSError:
-        return
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        value = value.strip()
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-            value = value[1:-1]
-        os.environ.setdefault(key.strip(), value)
-
-
-load_config(os.environ.get("PLEX_CONFIG", os.path.join(HERE, "config.env")))
+envfile.load_into_environ(os.environ.get("PLEX_CONFIG", os.path.join(HERE, "config.env")))
 
 PLEX_URL = os.environ.get("PLEX_URL", "http://LOCAL_IP_ADDRESS:32400")
 PLEX_TOKEN = os.environ.get("PLEX_TOKEN", "YOUR_PLEX_TOKEN")
@@ -134,8 +118,9 @@ def make_session():
     """HTTP session that automatically retries transient errors (429, 5xx)."""
     session = requests.Session()
     session.verify = False
+    # Only idempotent methods are retried: a retried POST could upload a logo or notify twice
     retry = Retry(total=4, backoff_factor=2, status_forcelist=[429, 500, 502, 503, 504],
-                  allowed_methods=["GET", "PUT", "POST", "DELETE"])
+                  allowed_methods=["GET", "PUT", "DELETE"])
     adapter = HTTPAdapter(max_retries=retry)
     session.mount("http://", adapter)
     session.mount("https://", adapter)
@@ -153,8 +138,11 @@ class TokenError(Exception):
 
 
 def is_unauthorized(error):
-    text = str(error)
-    return isinstance(error, TokenError) or "401" in text or "nauthorized" in text
+    """True only for a real 401: plexapi's Unauthorized or an HTTP response with status 401."""
+    from plexapi.exceptions import Unauthorized
+    if isinstance(error, (TokenError, Unauthorized)):
+        return True
+    return getattr(getattr(error, "response", None), "status_code", None) == 401
 
 
 def provider_info(item, language):
@@ -203,10 +191,24 @@ def image_size(plex, logo_or_url):
     return Image.open(io.BytesIO(head)).size
 
 
+# The last few images downloaded, so the same logo is not fetched again for the
+# OCR, the image comparison and the review page thumbnail of the same title
+_IMAGE_CACHE = collections.OrderedDict()
+IMAGE_CACHE_SIZE = 4  # some logos are 8000 px wide: keep the cache small
+
+
 def fetch_image(plex, logo_or_url):
+    key = logo_id(logo_or_url)
+    if key in _IMAGE_CACHE:
+        _IMAGE_CACHE.move_to_end(key)
+        return _IMAGE_CACHE[key]
     r = HTTP.get(logo_url(plex, logo_or_url), timeout=30)
     r.raise_for_status()
-    return Image.open(io.BytesIO(r.content)).convert("RGBA")
+    img = Image.open(io.BytesIO(r.content)).convert("RGBA")
+    _IMAGE_CACHE[key] = img
+    if len(_IMAGE_CACHE) > IMAGE_CACHE_SIZE:
+        _IMAGE_CACHE.popitem(last=False)
+    return img
 
 
 def same_image(a, b):
@@ -673,14 +675,27 @@ def plan_item(plex, item, logos, log, opts):
 # ---------------------------------------------------------------------------
 
 class UndoJournal:
-    """undo.json: the state of each logo before and after the change."""
+    """
+    undo.json: the state of each logo before and after the change. An entry is
+    written BEFORE the change and completed afterwards, so a change interrupted
+    halfway (Plex error, crash) can still be undone: its "after" stays null.
+    """
 
     def __init__(self, path):
         self.path = path
         self.entries = []
 
     def add(self, entry):
+        """Records an entry and returns it; update it with complete()."""
         self.entries.append(entry)
+        self._save()
+        return entry
+
+    def complete(self, entry, after):
+        entry["after"] = after
+        self._save()
+
+    def _save(self):
         tmp = self.path + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump({"format": "plex-smart-logo-updater/undo-v1", "entries": self.entries},
@@ -693,12 +708,11 @@ def selected_key(item):
 
 
 def apply_plan(item, plan):
-    """Selects (or uploads) the planned logo. Returns the key of the logo selected afterwards."""
+    """Selects (or uploads) the planned logo."""
     if plan.candidate is not None:
         plan.candidate.select()
     else:
         item.uploadLogo(url=plan.target_url)
-    return selected_key(item)
 
 
 def thumb(plex, logo_or_url):
@@ -774,14 +788,15 @@ def process_library(plex, section, log, opts, ctx):
                     continue
 
             if opts.apply:
-                before = logo_id(plan.current) if plan.current is not None else None
-                after = apply_plan(item, plan)
+                entry = ctx.journal.add({
+                    "ratingKey": item.ratingKey, "library": section.title, "title": label,
+                    "before": logo_id(plan.current) if plan.current is not None else None,
+                    "before_locked": plan.locked, "after": None,
+                })
+                apply_plan(item, plan)
                 if plan.locked and not opts.include_locked:
                     item.lockLogo()  # keep a hand-picked logo locked (--fix-locked-quebec)
-                ctx.journal.add({
-                    "ratingKey": item.ratingKey, "library": section.title, "title": label,
-                    "before": before, "before_locked": plan.locked, "after": after,
-                })
+                ctx.journal.complete(entry, selected_key(item))
                 ctx.changes += 1
                 status(plan.category, plan.detail)
                 if ctx.changes % BATCH_SIZE == 0:
@@ -1009,22 +1024,49 @@ def stop(opts, summary, error):
             print(f"Notification {kind}: {'sent' if err is None else 'failed (' + err + ')'}")
 
 
+def new_manual_titles(manual, state_path):
+    """
+    Titles to handle by hand ([CHECK], locked Quebec logos) that were not already
+    reported by a previous notification. The state file is updated with the
+    current list, so a title that is fixed and comes back is reported again.
+    """
+    try:
+        with open(state_path, encoding="utf-8") as f:
+            already = set(json.load(f))
+    except (OSError, ValueError):
+        already = set()
+    try:
+        with open(state_path, "w", encoding="utf-8") as f:
+            json.dump(sorted(manual), f, ensure_ascii=False, indent=1)
+    except OSError:
+        pass
+    return [t for t in manual if t not in already]
+
+
 def notify(opts, run_dir, totals, page, duration):
-    """Summary sent to the webhooks, only when there is something to do or report."""
+    """
+    Summary sent to the webhooks, only when there is something to do (changes,
+    errors) or NEW titles to handle by hand: those already reported by an
+    earlier run do not trigger a notification every week.
+    """
     to_do = len(totals["add"]) + len(totals["replace"])
-    to_check = len(totals["check"]) + len(totals["locked_qc"])
-    if not (to_do or totals["error"] or to_check):
+    manual = totals["check"] + totals["locked_qc"]
+    new_manual = new_manual_titles(manual, os.path.join(LOGS_DIR, ".notified-manual.json"))
+    if not (to_do or totals["error"] or new_manual):
         return
     if not NOTIFY_TARGETS:
         print("[!] --notify: no webhook in NOTIFY_URLS, no notification sent.")
         return
     verb = "applied" if opts.apply else "to review"
-    title = f"Plex logos: {to_do} change(s) {verb}"
-    lines = [f"{len(totals['add'])} addition(s), {len(totals['replace'])} Quebec logo(s) replaced"]
+    title = f"Plex logos: {to_do} change(s) {verb}" if to_do else "Plex logos: titles to handle by hand"
+    lines = []
+    if to_do:
+        lines.append(f"{len(totals['add'])} addition(s), {len(totals['replace'])} Quebec logo(s) replaced")
     if totals["unverified"]:
         lines.append(f"{len(totals['unverified'])} not verified by OCR, look at them first")
-    if to_check:
-        lines.append(f"{to_check} title(s) to handle by hand")
+    if new_manual:
+        lines.append(f"{len(new_manual)} new title(s) to handle by hand ({len(manual)} in total): "
+                     + ", ".join(new_manual[:5]) + ("…" if len(new_manual) > 5 else ""))
     if totals["error"]:
         lines.append(f"{len(totals['error'])} error(s)")
     if page and not opts.apply and to_do:
@@ -1075,7 +1117,9 @@ def undo(opts):
         try:
             item = plex.fetchItem(int(e["ratingKey"]))
             now = selected_key(item)
-            if now != e["after"]:
+            # "after" is null when the change was interrupted: the current state is unknown,
+            # so the previous state is restored anyway
+            if e.get("after") is not None and now != e["after"]:
                 log("  ==> [SKIPPED] the logo was changed since: left untouched")
                 skipped.append(e["title"])
                 continue
