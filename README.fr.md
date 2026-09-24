@@ -289,6 +289,11 @@ La détection des logos québécois et les notifications sont couvertes par des 
 
 GitHub Actions les lance à chaque envoi de code (Python 3.8 et 3.12).
 
+## Crédits
+
+- Inspiré de [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-logo-updater).
+- Développé avec l'aide d'un assistant IA (Claude), puis relu et testé sur une vraie bibliothèque Plex.
+
 ## Licence
 
 MIT, voir [LICENSE](LICENSE).

@@ -287,6 +287,11 @@ The Quebec logo detection and the notifications are covered by tests built from 
 
 GitHub Actions runs them on every push (Python 3.8 and 3.12).
 
+## Credits
+
+- Inspired by [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-logo-updater).
+- Developed with the help of an AI assistant (Claude), then reviewed and tested on a real Plex library.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
