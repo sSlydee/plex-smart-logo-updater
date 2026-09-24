@@ -3,6 +3,17 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.3.0] - 2026-09-24
+
+### Added
+- Tautulli integration: `tautulli-hook.sh` runs the script as soon as Plex adds a title ("Recently Added" trigger), in the background.
+- `--rating-key`: only process the given titles; an episode or a season counts as its show.
+- Uptime Kuma monitoring: `HEALTHCHECK_URL` is pinged after every run (up, or down with the reason); healthchecks.io URLs work too. The setup wizard asks for it.
+
+### Changed
+- In targeted runs, a pending change is notified only once (a season imported episode by episode sends one notification); the weekly run still reminds you of pending changes.
+- Runs wait for each other instead of running at the same time, and every run gets its own logs folder.
+
 ## [1.2.1] - 2026-09-24
 
 ### Fixed
@@ -52,6 +63,7 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.3.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.3.0
 [1.2.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.2.1
 [1.2.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.2.0
 [1.1.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.1.0

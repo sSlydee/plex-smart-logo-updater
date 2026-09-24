@@ -74,3 +74,29 @@ def send(session, targets, title, body, markdown_body=None):
             # A webhook address is a secret: never copy it into the logs
             results.append((kind, str(e).replace(url, f"<webhook {kind}>")))
     return results
+
+
+def heartbeat(session, url, ok, message="", duration_seconds=None):
+    """
+    Tells a monitoring service that a run happened (HEALTHCHECK_URL).
+
+    - Uptime Kuma push URL (…/api/push/<token>): status=up|down, msg and ping are set.
+    - Any other URL (healthchecks.io style): GET url when ok, url + "/fail" otherwise.
+    Returns None on success, or an error message (the URL is never included).
+    """
+    from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+    if "/api/push/" in url:
+        parts = urlsplit(url)
+        query = dict(parse_qsl(parts.query))
+        query.update(status="up" if ok else "down", msg=message[:200])
+        if duration_seconds is not None:
+            query["ping"] = str(int(duration_seconds * 1000))
+        target = urlunsplit(parts._replace(query=urlencode(query)))
+    else:
+        target = url if ok else url.rstrip("/") + "/fail"
+    try:
+        r = session.get(target, timeout=20)
+        r.raise_for_status()
+        return None
+    except Exception as e:
+        return str(e).replace(target, "<healthcheck URL>").replace(url, "<healthcheck URL>")

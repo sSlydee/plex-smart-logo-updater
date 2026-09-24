@@ -60,3 +60,39 @@ def test_send_never_leaks_webhook_address():
     [(kind, error)] = notify.send(session, [("discord", secret)], "Title", "Body")
     assert kind == "discord" and error
     assert "secret-token" not in error
+
+
+class GetSession:
+    def __init__(self, status=200):
+        self.urls = []
+        self.status = status
+
+    def get(self, url, timeout=None):
+        self.urls.append(url)
+        response = FakeResponse(self.status)
+        response.url = url
+        return response
+
+
+def test_heartbeat_uptime_kuma_up_and_down():
+    from urllib.parse import urlsplit, parse_qs
+    session = GetSession()
+    url = "https://kuma.example.org/api/push/AbC123?status=up&msg=OK&ping="
+    assert notify.heartbeat(session, url, True, "ok", 2.5) is None
+    assert notify.heartbeat(session, url, False, "Plex token rejected") is None
+    up, down = (parse_qs(urlsplit(u).query) for u in session.urls)
+    assert up["status"] == ["up"] and up["msg"] == ["ok"] and up["ping"] == ["2500"]
+    assert down["status"] == ["down"] and down["msg"] == ["Plex token rejected"]
+    assert all(urlsplit(u).path == "/api/push/AbC123" for u in session.urls)
+
+
+def test_heartbeat_healthchecks_style():
+    session = GetSession()
+    notify.heartbeat(session, "https://hc-ping.com/uuid", True)
+    notify.heartbeat(session, "https://hc-ping.com/uuid/", False)
+    assert session.urls == ["https://hc-ping.com/uuid", "https://hc-ping.com/uuid/fail"]
+
+
+def test_heartbeat_error_hides_the_url():
+    error = notify.heartbeat(GetSession(status=500), "https://kuma.example.org/api/push/SECRET", True)
+    assert error and "SECRET" not in error

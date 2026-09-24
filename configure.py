@@ -90,7 +90,7 @@ def ask_choice(question, options, default=1):
 # config.env
 # ---------------------------------------------------------------------------
 
-KNOWN_KEYS = ("PLEX_URL", "PLEX_TOKEN", "PLEX_LIBRARIES", "PLEX_LANGUAGES", "NOTIFY_URLS")
+KNOWN_KEYS = ("PLEX_URL", "PLEX_TOKEN", "PLEX_LIBRARIES", "PLEX_LANGUAGES", "NOTIFY_URLS", "HEALTHCHECK_URL")
 
 
 def read_config(path):
@@ -104,7 +104,8 @@ def write_config(path, values):
     envfile.write(path, ordered,
                   header=["plex-smart-logo-updater configuration, written by configure.py.",
                           "Do not publish: this file contains your Plex token and webhooks."],
-                  comments={"NOTIFY_URLS": "Webhooks for --notify (Discord, Bark or json:<url>), comma-separated"})
+                  comments={"NOTIFY_URLS": "Webhooks for --notify (Discord, Bark or json:<url>), comma-separated",
+                            "HEALTHCHECK_URL": "Uptime Kuma push URL (or healthchecks.io URL), pinged after every run"})
 
 
 def parse_hour(text):
@@ -276,6 +277,21 @@ def step_notifications(values):
         for kind, error in notify.send(session, targets, "Plex logos: test",
                                        "plex-smart-logo-updater notifications are working."):
             print(f"  {'✓' if error is None else '✗'} {kind}" + (f": {error}" if error else ""))
+
+    print()
+    print("Monitoring (optional): an Uptime Kuma \"Push\" monitor URL is pinged after every run,")
+    print("so you are warned if the automatic run stops working. Type \"none\" to remove it.")
+    current = values.get("HEALTHCHECK_URL", "")
+    url = ask("Uptime Kuma push URL (Enter to keep / skip)", current)
+    if url.lower() in ("none", "-"):
+        url = ""
+    if url and not re.match(r"^https?://\S+$", url):
+        print("  ✗ Invalid address (it must start with http:// or https://): monitoring not changed.")
+        url = current
+    values["HEALTHCHECK_URL"] = url
+    if url and url != current and ask_yes("Send a test ping?"):
+        error = notify.heartbeat(requests.Session(), url, True, "plex-smart-logo-updater: test")
+        print(f"  {'✓ ping sent' if error is None else '✗ ' + error}")
 
 
 def current_cron():

@@ -256,3 +256,67 @@ def test_keeps_locked_logo(main, locked, has_logo, is_qc, replace, include_locke
     plan.locked, plan.current, plan.current_is_qc = locked, (object() if has_logo else None), is_qc
     opts = argparse.Namespace(replace=replace, include_locked=include_locked, fix_locked_quebec=fix_qc)
     assert main.keeps_locked_logo(plan, opts) is kept
+
+
+# --- Tautulli: targeted runs -------------------------------------------------------
+
+class FakePlexItem:
+    def __init__(self, key, type_, title="T", library="Séries TV", parent=None, grandparent=None):
+        self.ratingKey, self.type, self.title, self.librarySectionTitle = key, type_, title, library
+        self.parentRatingKey, self.grandparentRatingKey = parent, grandparent
+
+
+class FakePlex:
+    def __init__(self, items):
+        self.items = {i.ratingKey: i for i in items}
+
+    def fetchItem(self, key):
+        if key not in self.items:
+            raise KeyError(f"no item {key}")
+        return self.items[key]
+
+
+def test_select_titles_climbs_to_the_show_and_deduplicates(main, monkeypatch):
+    monkeypatch.setattr(main, "TARGET_LIBRARIES", ["Séries TV", "Films"])
+    plex = FakePlex([
+        FakePlexItem(1, "show", "Show"),
+        FakePlexItem(2, "season", parent=1),
+        FakePlexItem(3, "episode", parent=2, grandparent=1),
+        FakePlexItem(4, "episode", parent=2, grandparent=1),
+        FakePlexItem(5, "movie", "Movie", library="Films"),
+        FakePlexItem(6, "movie", "Home video", library="Autres vidéos"),   # not a configured library
+        FakePlexItem(7, "track", "Song", library="Music"),
+    ])
+    lines = []
+    selected = main.select_titles(plex, ["3", "4,2", "5 6", "7", "99"], lines.append)
+    assert {lib: [i.ratingKey for i in items] for lib, items in selected.items()} == {"Séries TV": [1], "Films": [5]}
+    assert any("99" in line for line in lines)            # unknown key reported
+    assert any("Autres vidéos" in line for line in lines)  # outside PLEX_LIBRARIES reported
+
+
+def test_pending_changes_are_notified_once_in_targeted_runs(main, tmp_path):
+    state = str(tmp_path / "pending.json")
+    # Tautulli: first episode of a new show -> notified; the next episodes -> quiet
+    assert main.new_pending_changes({"1": "logo-a"}, state, targeted=True) == {"1": "logo-a"}
+    assert main.new_pending_changes({"1": "logo-a"}, state, targeted=True) == {}
+    # the planned logo changed -> notified again
+    assert main.new_pending_changes({"1": "logo-b"}, state, targeted=True) == {"1": "logo-b"}
+    # weekly full run: every pending change is a reminder
+    assert main.new_pending_changes({"1": "logo-b", "2": "logo-c"}, state, targeted=False) == \
+        {"1": "logo-b", "2": "logo-c"}
+
+
+def test_new_run_dir_is_unique(main, tmp_path, monkeypatch):
+    monkeypatch.setattr(main, "LOGS_DIR", str(tmp_path))
+    first, second = main.new_run_dir("simulation"), main.new_run_dir("simulation")
+    assert first != second and second.startswith(first)
+
+
+def test_prune_logs_handles_suffixed_folders(main, tmp_path, monkeypatch):
+    for name in ["2026-01-01_10h00m00s_simulation", "2026-01-01_10h00m00s_simulation_2",
+                 "2026-01-02_10h00m00s_simulation"]:
+        (tmp_path / name).mkdir()
+    monkeypatch.setattr(main, "LOGS_DIR", str(tmp_path))
+    monkeypatch.setattr(main, "LOGS_KEEP", 1)
+    main.prune_logs()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["2026-01-02_10h00m00s_simulation"]

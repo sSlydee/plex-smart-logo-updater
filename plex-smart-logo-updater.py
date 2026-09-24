@@ -27,12 +27,14 @@ or in environment variables, which take precedence:
   PLEX_LOGS_KEEP  dry-run log folders to keep, default: 100 (apply folders are always kept)
   PLEX_IGNORE_FILE  ignore list, default: ignored.json next to the script
   NOTIFY_URLS     webhooks for --notify: Discord, Bark or generic (see notify.py)
+  HEALTHCHECK_URL Uptime Kuma push URL (or healthchecks.io URL) pinged after every run
 
 See --help for the options.
 """
 import argparse
 import atexit
 import collections
+import contextlib
 import io
 import json
 import os
@@ -53,7 +55,7 @@ import notify as notifier
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-__version__ = "1.2.1"
+__version__ = "1.3.0"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -94,6 +96,8 @@ OCR_CACHE_PATH = os.environ.get("PLEX_OCR_CACHE", os.path.join(HERE, ".cache-ocr
 IGNORE_PATH = os.environ.get("PLEX_IGNORE_FILE", os.path.join(HERE, "ignored.json"))
 LOGS_KEEP = int(os.environ.get("PLEX_LOGS_KEEP", "100"))
 CRON_LOG_MAX_BYTES = 5 * 1024 * 1024
+# Uptime Kuma push URL (or healthchecks.io-style URL) pinged after every run
+HEALTHCHECK_URL = os.environ.get("HEALTHCHECK_URL", "").strip()
 # DISCORD_WEBHOOK is still accepted for backward compatibility
 NOTIFY_TARGETS = notifier.parse_targets(
     " ".join(filter(None, [os.environ.get("NOTIFY_URLS", ""), os.environ.get("DISCORD_WEBHOOK", "")])))
@@ -140,6 +144,9 @@ def parse_args():
                    help="only print the summary (details stay in the logs): handy for cron")
     p.add_argument("--notify", action="store_true",
                    help="send a summary to the NOTIFY_URLS webhooks (Discord, Bark…) when there is something to do")
+    p.add_argument("--rating-key", metavar="KEY", action="append", dest="rating_keys",
+                   help="only process these titles (Plex ratingKey; an episode or season counts as its show). "
+                        "Used by the Tautulli hook (tautulli-hook.sh)")
     p.add_argument("--ignore", metavar="TITLE", action="append",
                    help='never touch this title again: "Library/Title", "Title (year)" or a ratingKey '
                         "(repeatable)")
@@ -809,10 +816,10 @@ def load_choices(path):
     return data.get("decisions", {})
 
 
-def process_library(plex, section, log, opts, ctx, languages):
+def process_library(plex, section, log, opts, ctx, languages, items=None):
     cats = categories_for(opts)
     results = empty_results()
-    items = section.all()
+    items = section.all() if items is None else items
 
     def status(key, detail):
         log(f"  ==> [{cats.get(key, CATEGORIES[key])[0]}] {detail}")
@@ -891,6 +898,8 @@ def process_library(plex, section, log, opts, ctx, languages):
             if plan.mention:
                 results[plan.mention].append(label)
 
+            if not opts.apply:
+                ctx.pending[str(item.ratingKey)] = plan.target_id
             if ctx.html is not None:
                 ctx.html.append(html_card(plex, section, item, label, plan, cats, decidable=not opts.apply))
 
@@ -932,6 +941,36 @@ class Context:
         self.choices = None
         self.html = None
         self.ignored = None
+        self.pending = {}  # ratingKey -> planned logo, for changes to review
+
+
+def new_run_dir(mode):
+    """A new, unique logs folder: two runs started in the same second get "_2", "_3"…"""
+    base = os.path.join(LOGS_DIR, time.strftime("%Y-%m-%d_%Hh%Mm%S") + "_" + mode)
+    path, n = base, 1
+    while True:
+        try:
+            os.makedirs(path)
+            return path
+        except FileExistsError:
+            n += 1
+            path = f"{base}_{n}"
+
+
+@contextlib.contextmanager
+def run_lock():
+    """
+    Runs one at a time: Tautulli may start several runs at once (one per imported
+    episode); they wait for each other instead of sharing the cache and logs.
+    """
+    os.makedirs(LOGS_DIR, exist_ok=True)
+    with open(os.path.join(LOGS_DIR, ".run.lock"), "w") as lock:
+        try:
+            import fcntl
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        except ImportError:  # not available on Windows
+            pass
+        yield
 
 
 def prune_logs():
@@ -947,7 +986,7 @@ def prune_logs():
         return
     dry_runs = [n for n in names
                 if os.path.isdir(os.path.join(LOGS_DIR, n))
-                and n.endswith(("_simulation", "_undo-simulation"))
+                and re.search(r"_(simulation|undo-simulation)(_\d+)?$", n)
                 and not any(os.path.exists(os.path.join(LOGS_DIR, n, f)) for f in ("undo.json", "annulation.json"))]
     for name in dry_runs[:max(0, len(dry_runs) - LOGS_KEEP)]:
         shutil.rmtree(os.path.join(LOGS_DIR, name), ignore_errors=True)
@@ -969,8 +1008,7 @@ def run(opts):
     mode = "application" if opts.apply else "simulation"
     cats = categories_for(opts)
 
-    run_dir = os.path.join(LOGS_DIR, time.strftime("%Y-%m-%d_%Hh%Mm%S") + "_" + mode)
-    os.makedirs(run_dir, exist_ok=True)
+    run_dir = new_run_dir(mode)
     prune_logs()
     summary = Log(os.path.join(run_dir, "_summary.txt"))
 
@@ -1003,20 +1041,26 @@ def run(opts):
     totals = empty_results()
     per_library = []
 
+    selected = None
+    if opts.rating_keys:
+        selected = select_titles(plex, opts.rating_keys, summary)
+
     for name in TARGET_LIBRARIES:
         section = sections.get(name)
-        if section is None:
+        if section is None or (selected is not None and name not in selected):
             continue
         lib_start = time.time()
         log = Log(os.path.join(run_dir, safe_filename(name) + ".txt"), echo=not opts.quiet)
         languages = languages_for(section.language)
         write_header(log, f"LIBRARY: {name}", opts,
-                     [f"Content     : {section.totalSize} title(s), language {section.language}",
+                     [f"Content     : {section.totalSize} title(s), language {section.language}"
+                      + (f"; {len(selected[name])} selected with --rating-key" if selected is not None else ""),
                       f"Logo langs  : {' > '.join(languages)}"
                       + (" (+ Quebec logo detection)" if checks_quebec(languages) else "")],
                      languages=languages)
         try:
-            results = process_library(plex, section, log, opts, ctx, languages)
+            results = process_library(plex, section, log, opts, ctx, languages,
+                                      selected[name] if selected is not None else None)
         except TokenError as e:
             log(f"\n[!] Stopped: {e}")
             log.close()
@@ -1088,11 +1132,57 @@ def run(opts):
     summary.close()
 
     if opts.notify:
-        notify(opts, run_dir, totals, page, time.time() - start)
+        notify(opts, run_dir, totals, page, time.time() - start, ctx.pending)
+    to_do = len(totals["add"]) + len(totals["replace"])
+    ping_healthcheck(not totals["error"],
+                     f"{len(totals['error'])} error(s)" if totals["error"]
+                     else f"{to_do} change(s) to review" if to_do and not opts.apply
+                     else "ok", time.time() - start)
+
+
+def select_titles(plex, rating_keys, summary):
+    """
+    Titles to process for --rating-key, grouped by library: {library: [items]}.
+    An episode or a season counts as its show; unknown keys and titles outside the
+    configured libraries are reported and skipped.
+    """
+    selected, seen = {}, set()
+    keys = [k for value in rating_keys for k in re.split(r"[\s,]+", value) if k]
+    for key in keys:
+        try:
+            item = plex.fetchItem(int(key))
+            if item.type == "episode":
+                item = plex.fetchItem(int(item.grandparentRatingKey))
+            elif item.type == "season":
+                item = plex.fetchItem(int(item.parentRatingKey))
+        except Exception as e:
+            summary(f"  [!] ratingKey {key}: {e}")
+            continue
+        if item.type not in ("movie", "show"):
+            summary(f"  [!] ratingKey {key}: {item.type} titles have no logo, skipped")
+            continue
+        library = item.librarySectionTitle
+        if library not in TARGET_LIBRARIES:
+            summary(f"  [i] {item.title}: library \"{library}\" is not in PLEX_LIBRARIES, skipped")
+            continue
+        if item.ratingKey in seen:
+            continue
+        seen.add(item.ratingKey)
+        selected.setdefault(library, []).append(item)
+    summary(f"  Selected    : {len(seen)} title(s) from {len(keys)} ratingKey(s)")
+    return selected
+
+
+def ping_healthcheck(ok, message, duration=None):
+    """Heartbeat for Uptime Kuma (HEALTHCHECK_URL): up after a run, down when it failed."""
+    if not HEALTHCHECK_URL:
+        return
+    error = notifier.heartbeat(HTTP, HEALTHCHECK_URL, ok, message, duration)
+    print(f"Healthcheck: {'sent' if error is None else 'failed (' + error + ')'} ({'up' if ok else 'down'})")
 
 
 def stop(opts, summary, error):
-    """Stops on a connection error: clear message and notification."""
+    """Stops on a connection error: clear message, notification and healthcheck "down"."""
     if is_unauthorized(error):
         message = f"Plex token rejected: {TOKEN_FIX}"
     else:
@@ -1104,6 +1194,7 @@ def stop(opts, summary, error):
     if opts.notify and NOTIFY_TARGETS:
         for kind, err in notifier.send(HTTP, NOTIFY_TARGETS, "Plex logos: run failed", message):
             print(f"Notification {kind}: {'sent' if err is None else 'failed (' + err + ')'}")
+    ping_healthcheck(False, message)
 
 
 def new_manual_titles(manual, state_path):
@@ -1125,7 +1216,29 @@ def new_manual_titles(manual, state_path):
     return [t for t in manual if t not in already]
 
 
-def notify(opts, run_dir, totals, page, duration):
+def new_pending_changes(pending, state_path, targeted):
+    """
+    Changes to review that were not already notified. A full run notifies every
+    pending change (weekly reminder) and resets the state; a targeted run
+    (--rating-key, e.g. from Tautulli) only reports changes not notified yet, so
+    a season of 10 episodes does not send 10 notifications for the same show.
+    """
+    try:
+        with open(state_path, encoding="utf-8") as f:
+            already = json.load(f)
+    except (OSError, ValueError):
+        already = {}
+    new = {k: v for k, v in pending.items() if already.get(k) != v}
+    state = dict(already, **pending) if targeted else dict(pending)
+    try:
+        with open(state_path, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=1)
+    except OSError:
+        pass
+    return new if targeted else dict(pending)
+
+
+def notify(opts, run_dir, totals, page, duration, pending=None):
     """
     Summary sent to the webhooks, only when there is something to do (changes,
     errors) or NEW titles to handle by hand: those already reported by an
@@ -1134,6 +1247,11 @@ def notify(opts, run_dir, totals, page, duration):
     to_do = len(totals["add"]) + len(totals["replace"])
     manual = totals["check"] + totals["locked_qc"]
     new_manual = new_manual_titles(manual, os.path.join(LOGS_DIR, ".notified-manual.json"))
+    if not opts.apply:
+        new_pending = new_pending_changes(pending or {}, os.path.join(LOGS_DIR, ".notified-pending.json"),
+                                          targeted=bool(opts.rating_keys))
+        if not new_pending:
+            to_do = 0  # already notified: a targeted run stays quiet
     if not (to_do or totals["error"] or new_manual):
         return
     if not NOTIFY_TARGETS:
@@ -1176,8 +1294,7 @@ def undo(opts):
         raise SystemExit(f"[!] Cannot read {path}: {e}")
 
     mode = "undo" if opts.apply else "undo-simulation"
-    run_dir = os.path.join(LOGS_DIR, time.strftime("%Y-%m-%d_%Hh%Mm%S") + "_" + mode)
-    os.makedirs(run_dir, exist_ok=True)
+    run_dir = new_run_dir(mode)
     log = Log(os.path.join(run_dir, "_summary.txt"))
     log(LINE)
     log(f"  UNDO of {opts.undo}")
@@ -1322,6 +1439,13 @@ if __name__ == "__main__":
     if options.ignore or options.unignore or options.list_ignored:
         manage_ignore(options)
     elif options.undo:
-        undo(options)
+        with run_lock():
+            undo(options)
     else:
-        run(options)
+        try:
+            with run_lock():
+                run(options)
+        except Exception as crash:
+            # Unexpected crash: tell the monitoring before showing the traceback
+            ping_healthcheck(False, f"crash: {type(crash).__name__}: {crash}")
+            raise

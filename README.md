@@ -232,6 +232,7 @@ A new token is only saved if the connection to Plex succeeds with it.
 | `PLEX_LOGS_DIR` | Logs folder (optional) | `logs/` next to the script (default) |
 | `PLEX_OCR_CACHE` | OCR cache (optional) | `.cache-ocr.json` next to the script (default) |
 | `PLEX_IGNORE_FILE` | Ignore list (optional) | `ignored.json` next to the script (default) |
+| `HEALTHCHECK_URL` | Uptime Kuma push URL, pinged after every run (optional) | see [Monitoring](#monitoring-with-uptime-kuma) |
 | `PLEX_LOGS_KEEP` | Dry-run log folders to keep; older ones are deleted, apply folders (with `undo.json`) are always kept (optional) | `100` (default) |
 
 An environment variable set at launch takes precedence over `config.env`, for example to process a single library:
@@ -261,6 +262,33 @@ If you enabled it in the wizard, cron regularly runs a **dry run** with the revi
 
 The wizard manages a single line of your crontab, tagged `# plex-smart-logo-updater`, and leaves the others alone.
 
+### Instant processing with Tautulli
+
+If you use [Tautulli](https://tautulli.com/), it can run the script as soon as Plex adds a movie or a show, instead of waiting for the weekly run. Only the added titles are processed (a few seconds), and you get the notification right away.
+
+In Tautulli: **Settings > Notification Agents > Add a new notification agent > Script**, then:
+
+| Setting | Value |
+|---|---|
+| Script Folder | the project folder (the one containing `tautulli-hook.sh`) |
+| Script File | `tautulli-hook.sh` |
+| Triggers | **Recently Added** |
+| Arguments > Recently Added | `{rating_key}` |
+
+- The hook starts a dry run with the review page and `--notify` in the background, so Tautulli is not kept waiting; its output goes to `logs/tautulli.log`.
+- An episode or a season counts as its show, and titles outside `PLEX_LIBRARIES` are skipped.
+- A season imported episode by episode does not flood you: a pending change is notified once; the weekly run still sends a reminder while it is waiting for your review.
+- Runs started at the same time wait for each other.
+- If a logo is missing right after the import (Plex still fetching metadata), the weekly run catches it.
+
+You can also run it by hand: `.venv/bin/python plex-smart-logo-updater.py --rating-key 12345 --html`.
+
+### Monitoring with Uptime Kuma
+
+With `HEALTHCHECK_URL`, every run pings a monitoring service: **up** when it went fine, **down** with the reason when it failed (Plex token rejected, server unreachable, crash). If the weekly run stops (broken cron, seedbox restarted…), the missing ping warns you.
+
+In [Uptime Kuma](https://github.com/louislam/uptime-kuma): **Add New Monitor > Push**, copy the push URL into `HEALTHCHECK_URL` (or answer the question in `configure.py --notifications`), and set the **heartbeat interval** a bit above your cron frequency (e.g. 8 days = 691200 s for a weekly run). A [healthchecks.io](https://healthchecks.io/) URL works too.
+
 ## Usage
 
 | Option | Effect |
@@ -273,6 +301,7 @@ The wizard manages a single line of your crontab, tagged `# plex-smart-logo-upda
 | `--notify` | Send a summary to the `NOTIFY_URLS` webhooks when there is something to do |
 | `--quiet` | Only print the summary (details stay in the logs) |
 | `--undo FOLDER` | Undo an application (dry run unless `--apply` is given) |
+| `--rating-key KEY` | Only process these titles (see [Tautulli](#instant-processing-with-tautulli)) |
 | `--ignore TITLE` | Never touch this title again (see [Ignore list](#ignore-list)) |
 | `--unignore TITLE` | Remove a title from the ignore list |
 | `--list-ignored` | Show the ignore list |
