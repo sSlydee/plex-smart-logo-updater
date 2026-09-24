@@ -1,5 +1,7 @@
 # plex smart logo updater
 
+[![Tests](https://github.com/sSlydee/plex-smart-logo-updater/actions/workflows/tests.yml/badge.svg)](https://github.com/sSlydee/plex-smart-logo-updater/actions/workflows/tests.yml) [![Release](https://img.shields.io/github/v/release/sSlydee/plex-smart-logo-updater)](https://github.com/sSlydee/plex-smart-logo-updater/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Smarter Plex logos (ClearLogo): the right logo in each library's language, with an English fallback, and no French-Canadian logos in French libraries.**
 
 🇫🇷 [Version française](README.fr.md)

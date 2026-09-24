@@ -1,5 +1,7 @@
 # plex smart logo updater
 
+[![Tests](https://github.com/sSlydee/plex-smart-logo-updater/actions/workflows/tests.yml/badge.svg)](https://github.com/sSlydee/plex-smart-logo-updater/actions/workflows/tests.yml) [![Release](https://img.shields.io/github/v/release/sSlydee/plex-smart-logo-updater)](https://github.com/sSlydee/plex-smart-logo-updater/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Des logos Plex (ClearLogo) mieux choisis : le bon logo dans la langue de chaque bibliothèque, l'anglais en secours, et pas de logos québécois dans les bibliothèques françaises.**
 
 L'interface du script (messages, logs, page de contrôle, assistant) est en anglais. Cette page en décrit le fonctionnement en français.
