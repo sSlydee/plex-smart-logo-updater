@@ -52,10 +52,39 @@ def _prepare(img, height=100):
     return np.array(gray.convert("RGB"))
 
 
+# Version of the OCR reading: bump it when read_text() changes, so cached readings are redone
+OCR_VERSION = 2
+
+
+def reading_order(result):
+    """
+    Text boxes in reading order: line by line, then left to right. The OCR engine
+    may return spaced-out letters out of order ("U R S E" for "RUSE") when their
+    heights differ slightly.
+    """
+    boxes = []
+    for points, text, _score in result:
+        ys = [p[1] for p in points]
+        xs = [p[0] for p in points]
+        boxes.append({"text": text, "x": min(xs), "top": min(ys), "bottom": max(ys)})
+    boxes.sort(key=lambda b: b["top"])
+    lines = []
+    for box in boxes:
+        center = (box["top"] + box["bottom"]) / 2
+        # Same line when the box's vertical center falls within the line's extent
+        if lines and lines[-1]["top"] <= center <= lines[-1]["bottom"]:
+            line = lines[-1]
+            line["boxes"].append(box)
+            line["bottom"] = max(line["bottom"], box["bottom"])
+        else:
+            lines.append({"top": box["top"], "bottom": box["bottom"], "boxes": [box]})
+    return [b["text"] for line in lines for b in sorted(line["boxes"], key=lambda b: b["x"])]
+
+
 def read_text(img):
-    """Text read on the logo (empty string if nothing is read)."""
+    """Text read on the logo, in reading order (empty string if nothing is read)."""
     result, _ = _engine()(_prepare(img))
-    return " ".join(r[1] for r in result) if result else ""
+    return " ".join(reading_order(result)) if result else ""
 
 
 def normalize(text):

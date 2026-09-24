@@ -55,7 +55,7 @@ import notify as notifier
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -325,13 +325,15 @@ class OcrCache:
         """Returns (text read, (width, height))."""
         key = logo_id(logo_or_url)
         entry = self.data.get(key)
-        if entry is not None:
+        # Readings made by an older version of the OCR code are redone
+        if entry is not None and entry.get("v") == quebec.OCR_VERSION:
             self.hits += 1
             return entry["text"], (entry["w"], entry["h"])
         self.misses += 1
         img = fetch_image(plex, logo_or_url)
         text = quebec.read_text(img)
-        self.data[key] = {"text": text, "w": img.width, "h": img.height, "color": colorfulness(img)}
+        self.data[key] = {"text": text, "w": img.width, "h": img.height, "color": colorfulness(img),
+                          "v": quebec.OCR_VERSION}
         self.dirty = True
         return text, img.size
 

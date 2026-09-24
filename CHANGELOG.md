@@ -3,6 +3,11 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.3.1] - 2026-09-24
+
+### Fixed
+- Logos with widely spaced letters could be read out of order ("U R S E" for "RUSE"), so a Quebec logo was not detected (e.g. *Sharper*). OCR text is now assembled in reading order; cached readings are redone once.
+
 ## [1.3.0] - 2026-09-24
 
 ### Added
@@ -63,6 +68,7 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.3.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.3.1
 [1.3.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.3.0
 [1.2.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.2.1
 [1.2.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.2.0

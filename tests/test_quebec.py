@@ -92,3 +92,21 @@ def test_titles_differ(fr, ca, differ):
 
 def test_normalize_strips_accents_and_punctuation():
     assert q.normalize("L'Été : Décadence!") == ["l", "ete", "decadence"]
+
+
+def box(x, top, height, text):
+    """A text box as returned by the OCR engine: 4 corner points, text, score."""
+    return [[[x, top], [x + 10, top], [x + 10, top + height], [x, top + height]], text, 0.9]
+
+
+def test_reading_order_fixes_spaced_letters():
+    """Regression: "RUSE" with spaced letters was read "U R S E" and not detected as Quebec."""
+    result = [box(30, 11, 40, "U"), box(10, 12, 40, "R"), box(50, 10, 41, "S"), box(70, 12, 40, "E")]
+    assert q.reading_order(result) == ["R", "U", "S", "E"]
+    assert q.verdict(" ".join(q.reading_order(result)), "Sharper", "Ruse", "Sharper")[0] == q.QC
+
+
+def test_reading_order_keeps_lines():
+    result = [box(10, 60, 30, "WINTER SOLDIER"), box(40, 10, 30, "FALCON"), box(10, 10, 30, "THE"),
+              box(10, 35, 20, "AND THE")]
+    assert q.reading_order(result) == ["THE", "FALCON", "AND THE", "WINTER SOLDIER"]
