@@ -1,0 +1,7 @@
+plexapi
+requests
+urllib3
+pillow
+rapidocr-onnxruntime
+opencv-python-headless<4.11
+numpy<2
