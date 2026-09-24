@@ -1,4 +1,4 @@
-# plex-smart-logo-updater
+# plex smart logo updater
 
 **Smarter Plex logos (ClearLogo): the right logo in each library's language, with an English fallback, and no French-Canadian logos in French libraries.**
 
