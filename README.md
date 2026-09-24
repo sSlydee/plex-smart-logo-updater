@@ -10,6 +10,8 @@ The language fallback works for any library language (e.g. `PLEX_LANGUAGES=de-DE
 
 Based on [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-logo-updater) (MIT license).
 
+![Review page: Quebec logos (left) replaced with French logos (right)](docs/review-quebec.png)
+
 ## The problem
 
 Plex only sets a logo automatically **when one exists in the library language**. In a French library, a title without a French logo therefore stays without a logo, even when good English logos exist. This is very common for anime.
@@ -172,6 +174,8 @@ In `--apply` mode, the script pauses 2 s after each logo and 10 s every 10 logos
 
 The script writes `review.html` in the dry run's logs folder.
 
+![Review page with all changes](docs/review-all.png)
+
 **2. Review on your computer:** download `review.html` (SFTP, web file manager…) and open it in your browser. It is a self-contained file: images are embedded, and it contains neither a link to your server nor your token.
 
 - Each change is shown with the old and the new logo.
@@ -271,6 +275,17 @@ The first dry run is slower on movie libraries (about 7 minutes for 300 movies) 
 - Only the main movie/show logo is handled, not season or episode logos.
 - For titles tagged `[NONE]` or `[CHECK]`, pick or upload a logo by hand in Plex.
 - `config.env`, the `logs/` and `.venv/` folders and the `.cache-ocr.json` cache must not be published (see `.gitignore`): they contain your token or the list of your titles.
+
+## Tests
+
+The Quebec logo detection and the notifications are covered by tests built from real cases (Edge of Tomorrow, Bullet Train, Captain America, Avatar…). They need neither a Plex server nor the OCR engine:
+
+```bash
+.venv/bin/pip install pytest
+.venv/bin/python -m pytest tests
+```
+
+GitHub Actions runs them on every push (Python 3.8 and 3.12).
 
 ## License
 

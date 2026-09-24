@@ -12,6 +12,8 @@ Le repli de langue fonctionne pour toutes les langues de bibliothèque (par exem
 
 Basé sur [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-logo-updater) (licence MIT).
 
+![Page de contrôle : logos québécois (à gauche) remplacés par des logos français (à droite)](docs/review-quebec.png)
+
 ## Le problème
 
 Plex ne pose un logo automatiquement **que s'il en existe un dans la langue de la bibliothèque**. Dans une bibliothèque en français, un titre sans logo français reste donc sans logo, même si de bons logos en anglais existent. C'est très fréquent pour les animes.
@@ -174,6 +176,8 @@ En mode `--apply`, le script fait une pause de 2 s après chaque logo et de 10 s
 
 Le script crée `review.html` dans le dossier de logs de la simulation.
 
+![Page de contrôle avec tous les changements](docs/review-all.png)
+
 **2. Contrôle sur ton PC :** télécharge `review.html` (SFTP, gestionnaire de fichiers web…) et ouvre-le dans ton navigateur. C'est un fichier autonome : les images sont incluses, il ne contient ni lien vers ton serveur ni token.
 
 - Chaque changement s'affiche avec l'ancien et le nouveau logo.
@@ -273,6 +277,17 @@ La première simulation est plus longue sur les bibliothèques de films (environ
 - Seul le logo principal du film ou de la série est traité, pas ceux des saisons ou des épisodes.
 - Pour les titres marqués `[NONE]` ou `[CHECK]`, il faut choisir un logo à la main dans Plex ou en importer un.
 - `config.env`, les dossiers `logs/`, `.venv/` et le cache `.cache-ocr.json` ne sont pas à publier (voir `.gitignore`) : ils contiennent ton token ou la liste de tes titres.
+
+## Tests
+
+La détection des logos québécois et les notifications sont couvertes par des tests construits à partir de cas réels (Edge of Tomorrow, Bullet Train, Captain America, Avatar…). Ils ne nécessitent ni serveur Plex ni moteur OCR :
+
+```bash
+.venv/bin/pip install pytest
+.venv/bin/python -m pytest tests
+```
+
+GitHub Actions les lance à chaque envoi de code (Python 3.8 et 3.12).
 
 ## Licence
 

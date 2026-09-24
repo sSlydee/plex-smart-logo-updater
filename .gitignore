@@ -6,3 +6,4 @@ logs/
 choices.json
 choix.json
 config.env
+.pytest_cache/
