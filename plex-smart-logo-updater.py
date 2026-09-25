@@ -15,6 +15,11 @@ showing the French (or original) title when one exists.
 By default only titles WITHOUT a logo are handled: an existing logo is never
 replaced unless it is a Quebec one.
 
+Posters (--posters, or PLEX_POSTERS=yes): Plex picks Quebec posters too. When
+the Quebec title differs from the French title, the current poster is read and a
+Quebec poster is replaced with one showing the French (or original) title.
+Other posters are never touched.
+
 Configuration lives in config.env (next to the script, see config.env.example)
 or in environment variables, which take precedence:
   PLEX_URL        e.g. http://192.168.1.100:32400
@@ -28,6 +33,7 @@ or in environment variables, which take precedence:
   PLEX_IGNORE_FILE  ignore list, default: ignored.json next to the script
   NOTIFY_URLS     webhooks for --notify: Discord, Bark or generic (see notify.py)
   HEALTHCHECK_URL Uptime Kuma push URL (or healthchecks.io URL) pinged after every run
+  PLEX_POSTERS    "yes": also replace Quebec posters on every run (same as --posters)
 
 See --help for the options.
 """
@@ -55,7 +61,7 @@ import notify as notifier
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-__version__ = "1.4.0"
+__version__ = "1.5.0"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -67,6 +73,9 @@ PLEX_TOKEN = os.environ.get("PLEX_TOKEN", "YOUR_PLEX_TOKEN")
 TARGET_LIBRARIES = [s.strip() for s in os.environ.get("PLEX_LIBRARIES", "Movies,TV Shows").split(",")]
 LANGUAGES_SETTING = os.environ.get("PLEX_LANGUAGES", "auto").strip() or "auto"
 FALLBACK_LANGUAGE = "en-US"
+CHECK_POSTERS = os.environ.get("PLEX_POSTERS", "no").strip().lower() in ("1", "yes", "on", "true")
+# Posters read at most per title when looking for a French poster to replace a Quebec one
+POSTER_CANDIDATES = 30
 
 
 def languages_for(library_language, setting=None):
@@ -142,6 +151,9 @@ def parse_args():
                    help="with --replace: also replace hand-picked (locked) logos (not recommended)")
     p.add_argument("--fix-locked-quebec", action="store_true",
                    help="also replace locked logos detected as Quebec logos")
+    p.add_argument("--posters", action="store_true",
+                   help="also replace Quebec posters in French libraries (PLEX_POSTERS=yes in config.env "
+                        "does it on every run)")
     p.add_argument("--quiet", action="store_true",
                    help="only print the summary (details stay in the logs): handy for cron")
     p.add_argument("--notify", action="store_true",
@@ -199,8 +211,14 @@ def is_unauthorized(error):
 
 def provider_info(item, language):
     """(title, recommended logo URL) from Plex's metadata service, for this language."""
+    title, images = provider_images(item, language)
+    return title, images.get("clearLogo")
+
+
+def provider_images(item, language):
+    """(title, {image type: recommended URL}) from Plex's metadata service, for this language."""
     if not item.guid or not item.guid.startswith("plex://"):
-        return None, None
+        return None, {}
     key = (item.guid, language)
     if key not in _PROVIDER_CACHE:
         headers = {"X-Plex-Token": PLEX_TOKEN, "Accept": "application/json", "X-Plex-Language": language}
@@ -211,10 +229,13 @@ def provider_info(item, language):
         r.raise_for_status()
         metadata = r.json()["MediaContainer"].get("Metadata", [])
         if not metadata:
-            _PROVIDER_CACHE[key] = (None, None)
+            _PROVIDER_CACHE[key] = (None, {})
         else:
-            logo = next((i.get("url") for i in metadata[0].get("Image", []) if i.get("type") == "clearLogo"), None)
-            _PROVIDER_CACHE[key] = (metadata[0].get("title"), logo)
+            images = {}
+            for image in metadata[0].get("Image", []):
+                if image.get("type") and image.get("url"):
+                    images.setdefault(image["type"], image["url"])
+            _PROVIDER_CACHE[key] = (metadata[0].get("title"), images)
     return _PROVIDER_CACHE[key]
 
 
@@ -296,8 +317,30 @@ def find_candidate(plex, logos, target_url, target_size):
     return None, None, f"{len(same_size)} of the same size but none identical"
 
 
-def is_locked(item):
-    return any(f.name == "clearLogo" and f.locked for f in item.fields)
+class Asset:
+    """A kind of image handled by the script: logos, and optionally posters."""
+
+    def __init__(self, name, field, images, lock, unlock):
+        self.name = name        # "logo" or "poster"
+        self.field = field      # Plex field, for the lock
+        self.images = images    # item method listing the candidates
+        self.lock, self.unlock = lock, unlock
+
+    def candidates(self, item):
+        return getattr(item, self.images)()
+
+    def selected_key(self, item):
+        return next((i.ratingKey for i in self.candidates(item) if i.selected), None)
+
+
+LOGO = Asset("logo", "clearLogo", "logos", "lockLogo", "unlockLogo")
+POSTER = Asset("poster", "thumb", "posters", "lockPoster", "unlockPoster")
+ASSETS = {a.name: a for a in (LOGO, POSTER)}
+POSTER_SUFFIX = ":poster"  # poster keys in choices.json and ignored.json: "<ratingKey>:poster"
+
+
+def is_locked(item, field="clearLogo"):
+    return any(f.name == field and f.locked for f in item.fields)
 
 
 def fmt_size(size):
@@ -325,8 +368,8 @@ class OcrCache:
             self.data = {}
         self.hits = self.misses = 0
 
-    def read(self, plex, logo_or_url):
-        """Returns (text read, (width, height))."""
+    def read(self, plex, logo_or_url, poster=False):
+        """Returns (text read, (width, height)); posters are read differently (whole image, in color)."""
         key = logo_id(logo_or_url)
         entry = self.data.get(key)
         # Readings made by an older version of the OCR code are redone
@@ -335,9 +378,10 @@ class OcrCache:
             return entry["text"], (entry["w"], entry["h"])
         self.misses += 1
         img = fetch_image(plex, logo_or_url)
-        text = quebec.read_text(img)
-        self.data[key] = {"text": text, "w": img.width, "h": img.height, "color": colorfulness(img),
-                          "v": quebec.OCR_VERSION}
+        text = quebec.read_text(img, poster=poster)
+        self.data[key] = {"text": text, "w": img.width, "h": img.height, "v": quebec.OCR_VERSION}
+        if not poster:
+            self.data[key]["color"] = colorfulness(img)
         self.dirty = True
         return text, img.size
 
@@ -384,10 +428,21 @@ OCR = OcrCache(OCR_CACHE_PATH)
 atexit.register(OCR.save)
 
 
-def read_logo(plex, logo_or_url, titles):
-    """Reads the logo and returns (verdict, text read)."""
-    text, _ = OCR.read(plex, logo_or_url)
+def read_logo(plex, logo_or_url, titles, poster=False):
+    """Reads the logo (or poster) and returns (verdict, text read)."""
+    text, _ = OCR.read(plex, logo_or_url, poster=poster)
     return quebec.verdict(text, *titles)[0], text
+
+
+def shorten(text, width=60):
+    return text if len(text) <= width else text[:width - 1] + "…"
+
+
+def mention_for(kind, text, titles):
+    """Special mention of a replacement picked by OCR."""
+    if kind == quebec.ORIGINAL:
+        return "original"
+    return None if quebec.verdict(text, *titles)[0] == quebec.FR else "inferred"
 
 
 def best_french_candidate(plex, logos, titles, exclude=(), plex_picks=(), current=None):
@@ -426,13 +481,43 @@ def best_french_candidate(plex, logos, titles, exclude=(), plex_picks=(), curren
     if best is None:
         return (None,) * 5
     _, i, logo, text, kind = best
-    if kind == quebec.ORIGINAL:
-        mention = "original"
-    elif quebec.verdict(text, *titles)[0] == quebec.FR:
-        mention = None
-    else:
-        mention = "inferred"
-    return i, logo, text, kind, mention
+    return i, logo, text, kind, mention_for(kind, text, titles)
+
+
+def best_french_poster(plex, posters, titles, exclude=(), plex_picks=()):
+    """
+    Best non-Quebec poster among the first POSTER_CANDIDATES ones, in the order
+    Plex lists them: those showing the French title first, then the original
+    title; at similar closeness, the one Plex recommends, then Plex's order.
+    Unreadable posters (no text, stylized title) are never picked: they cannot
+    be checked.
+    Returns (index, poster, text read, kind, mention) or (None,) * 5.
+    """
+    best = None
+    read = 0
+    for i, poster in enumerate(posters):
+        if i in exclude:
+            continue
+        if read >= POSTER_CANDIDATES:
+            break
+        read += 1
+        try:
+            text, _ = OCR.read(plex, poster, poster=True)
+        except Exception:
+            continue
+        kind, score = quebec.replacement_kind(text, *titles)
+        if kind is None:
+            continue
+        is_pick = poster.ratingKey in plex_picks or poster.key in plex_picks
+        rank = (quebec.PREFERENCE[kind], round(score / 0.1), is_pick, -i)
+        if best is None or rank > best[0]:
+            best = (rank, i, poster, text, kind)
+        if kind == quebec.FR and score >= 0.95:
+            break  # the French title, read almost exactly: no need to read further
+    if best is None:
+        return (None,) * 5
+    _, i, poster, text, kind = best
+    return i, poster, text, kind, mention_for(kind, text, titles)
 
 
 # ---------------------------------------------------------------------------
@@ -471,6 +556,10 @@ MENTIONS = {
 MENTION_OF = {quebec.FR_GUESS: "inferred", quebec.ORIGINAL: "original", quebec.UNKNOWN: "unverified"}
 # locked_qc: locked logo that looks like a Quebec one (reported; only changed with --fix-locked-quebec)
 EXTRA_KEYS = ("locked_qc",) + tuple(MENTIONS)
+# Posters (--posters) are counted apart from the logos: a title has one logo result,
+# and a poster result only when its poster is a Quebec one
+POSTER_RESULTS = {"replace": "poster_replace", "check": "poster_check", "locked": "poster_locked_qc"}
+EXTRA_KEYS += tuple(POSTER_RESULTS.values())
 
 LINE = "=" * 72
 THIN = "-" * 72
@@ -549,6 +638,10 @@ def write_header(log, title, opts, extra=(), languages=None):
     log("       with a logo showing the French (or original) title when one exists.")
     if opts.fix_locked_quebec:
         log("       Locked logos detected as Quebec logos are ALSO replaced.")
+    if getattr(opts, "posters", False):
+        log("    4. Posters: when the Quebec title differs, the poster is read (OCR) and a Quebec")
+        log("       poster is replaced with one showing the French (or original) title.")
+        log("       Other posters are never touched.")
     log("")
     log("  Legend:")
     cats = categories_for(opts)
@@ -568,6 +661,28 @@ def write_counts(log, results, cats, indent="  "):
     for key, (_, label) in cats.items():
         log(f"{indent}{label.ljust(width + 3, '.')} {len(results[key]):>5}")
     log(f"{indent}{'TOTAL'.ljust(width + 3, '.')} {sum(len(results[k]) for k in cats):>5}")
+
+
+def write_posters(log, results, opts):
+    """Posters section of a summary (--posters)."""
+    sections = [
+        ("poster_replace", "Quebec posters replaced" if opts.apply else "Quebec posters to replace"),
+        ("poster_check", "Quebec posters with no French poster found, do it by hand"),
+        ("poster_locked_qc", "WARNING, locked posters that look like Quebec posters (--fix-locked-quebec)"),
+    ]
+    log("")
+    if not any(results[key] for key, _ in sections):
+        log("  Posters: no Quebec poster found.")
+    for key, title in sections:
+        if results[key]:
+            log(f"  {title} ({len(results[key])}):")
+            for t in results[key]:
+                log(f"    - {t}")
+
+
+def changes(results):
+    """Number of changes (logos and posters) to apply or applied."""
+    return len(results["add"]) + len(results["replace"]) + len(results["poster_replace"])
 
 
 def write_mentions(log, results):
@@ -607,6 +722,8 @@ class Plan:
         self.current_is_qc = False
         self.titles = (None, None, None)  # French, Quebec, original
         self.chosen = ""          # description of the chosen logo
+        self.asset = LOGO         # LOGO or POSTER
+        self.key = None           # key in choices.json: "<ratingKey>" or "<ratingKey>:poster"
 
     @property
     def target_id(self):
@@ -631,6 +748,17 @@ def keeps_locked_logo(plan, opts):
     return not (plan.current_is_qc and opts.fix_locked_quebec)
 
 
+def quebec_titles(item, languages):
+    """(French, Quebec, original) titles when a Quebec image is possible, otherwise None."""
+    if not checks_quebec(languages):
+        return None
+    fr_title = provider_info(item, languages[0])[0]
+    ca_title = provider_info(item, "fr-CA")[0]
+    if not quebec.titles_differ(fr_title, ca_title):
+        return None
+    return fr_title, ca_title, provider_info(item, "en-US")[0]
+
+
 def plan_item(plex, item, logos, log, opts, languages):
     """Inspects a title and decides what to do, without changing anything."""
     plan = Plan()
@@ -645,15 +773,11 @@ def plan_item(plex, item, logos, log, opts, languages):
             f"({plan.current.provider or 'local file'}), {who}")
 
     # Risk of a Quebec logo: the Quebec title differs from the French title
-    risky = False
-    if checks_quebec(languages):
-        fr_title = provider_info(item, languages[0])[0]
-        ca_title = provider_info(item, "fr-CA")[0]
-        risky = quebec.titles_differ(fr_title, ca_title)
-        if risky:
-            en_title = provider_info(item, "en-US")[0]
-            plan.titles = (fr_title, ca_title, en_title)
-            log(f"  Titles           : France \"{fr_title}\" | Quebec \"{ca_title}\" | original \"{en_title}\"")
+    titles = quebec_titles(item, languages)
+    risky = titles is not None
+    if risky:
+        plan.titles = titles
+        log_titles(log, titles)
 
     if plan.current is not None and risky:
         v, text = read_logo(plex, plan.current, plan.titles)
@@ -749,6 +873,50 @@ def plan_item(plex, item, logos, log, opts, languages):
     return plan
 
 
+def log_titles(log, titles):
+    fr_title, ca_title, en_title = titles
+    log(f"  Titles           : France \"{fr_title}\" | Quebec \"{ca_title}\" | original \"{en_title}\"")
+
+
+def plan_poster(plex, item, log, opts, languages, titles):
+    """
+    Quebec poster check, only for titles whose Quebec title differs: a Quebec
+    poster is replaced with one showing the French (or original) title. Returns
+    None when there is nothing to report (the poster is not a Quebec one).
+    """
+    posters = POSTER.candidates(item)
+    plan = Plan()
+    plan.asset, plan.titles = POSTER, titles
+    plan.current_index, plan.current = next(((i, p) for i, p in enumerate(posters) if p.selected), (None, None))
+    if plan.current is None:
+        return None
+    v, text = read_logo(plex, plan.current, titles, poster=True)
+    log(f"  Poster reads     : \"{shorten(text)}\" -> {v}")
+    if v != quebec.QC:
+        return None
+    plan.current_is_qc = True
+    plan.locked = is_locked(item, POSTER.field)
+    if keeps_locked_logo(plan, opts):
+        plan.category = "locked"
+        plan.detail = "hand-picked poster (locked) that looks like a Quebec poster, see --fix-locked-quebec"
+        return plan
+    picks = {u for u in (provider_images(item, lang)[1].get("coverPoster") for lang in languages) if u}
+    index, candidate, text, kind, mention = best_french_poster(plex, posters, titles, {plan.current_index}, picks)
+    if candidate is None:
+        plan.category = "check"
+        plan.detail = (f"the poster is a Quebec poster and no French poster was found among the first "
+                       f"{min(POSTER_CANDIDATES, len(posters) - 1)} of {len(posters)}: do it by hand")
+        return plan
+    log(f"  Poster choice    : #{index + 1} of {len(posters)} ({candidate.provider}), \"{shorten(text)}\" -> {kind}")
+    plan.index, plan.candidate, plan.mention = index, candidate, mention
+    plan.category = "replace"
+    plan.chosen = f"poster \"{shorten(text, 40)}\" ({kind})"
+    plan.detail = f"{plan.chosen}, instead of poster #{plan.current_index + 1} (Quebec)"
+    if mention:
+        plan.detail += f"  [{MENTIONS[mention][0]}]"
+    return plan
+
+
 # ---------------------------------------------------------------------------
 # Applying, undo journal, review page
 # ---------------------------------------------------------------------------
@@ -782,8 +950,8 @@ class UndoJournal:
         os.replace(tmp, self.path)
 
 
-def selected_key(item):
-    return next((l.ratingKey for l in item.logos() if l.selected), None)
+def selected_key(item, asset=LOGO):
+    return asset.selected_key(item)
 
 
 def apply_plan(item, plan):
@@ -794,21 +962,27 @@ def apply_plan(item, plan):
         item.uploadLogo(url=plan.target_url)
 
 
-def thumb(plex, logo_or_url):
+def thumb(plex, logo_or_url, poster=False):
     try:
-        return html_report.thumbnail(fetch_image(plex, logo_or_url))
+        return html_report.thumbnail(fetch_image(plex, logo_or_url), poster=poster)
     except Exception:
         return None
 
 
 def html_card(plex, section, item, label, plan, cats, decidable):
-    before = thumb(plex, plan.current) if plan.current is not None else None
+    poster = plan.asset is POSTER
+    before = thumb(plex, plan.current, poster) if plan.current is not None else None
     after = None
     if plan.is_change:
-        after = thumb(plex, plan.candidate if plan.candidate is not None else plan.target_url)
+        after = thumb(plex, plan.candidate if plan.candidate is not None else plan.target_url, poster)
     category_label = cats.get(plan.category, CATEGORIES[plan.category])[1]
     if plan.category == "locked" and plan.current_is_qc:
         category_label = "Locked logo that looks like a Quebec logo (--fix-locked-quebec to replace it)"
+    if poster:
+        category_label = {"replace": "Quebec poster to replace" if decidable else "Quebec poster replaced",
+                          "check": "Quebec poster, no French poster found",
+                          "locked": "Locked poster that looks like a Quebec poster (--fix-locked-quebec)"
+                          }.get(plan.category, category_label)
     mention_label = MENTIONS[plan.mention][0].capitalize() if plan.mention else ""
     return html_report.card(section.title, item, label, plan, before, after, decidable,
                             category_label, mention_label)
@@ -826,94 +1000,129 @@ def process_library(plex, section, log, opts, ctx, languages, items=None):
     cats = categories_for(opts)
     results = empty_results()
     items = section.all() if items is None else items
+    posters = getattr(opts, "posters", False) and checks_quebec(languages)
 
     def status(key, detail):
         log(f"  ==> [{cats.get(key, CATEGORIES[key])[0]}] {detail}")
+
+    def handle(item, label, plan):
+        """Reports one planned change, filters it with the review page choices and applies it."""
+        is_poster = plan.asset is POSTER
+        shown = f"{label} [poster]" if is_poster else label
+
+        def result(category):
+            return POSTER_RESULTS.get(category, category) if is_poster else category
+
+        if plan.category == "locked" and plan.current_is_qc and not is_poster:
+            results["locked_qc"].append(label)
+
+        if not plan.is_change:
+            status(plan.category, plan.detail)
+            # The poster lists already say "posters": the " [poster]" suffix is only for the shared lists
+            results[result(plan.category)].append(label if result(plan.category) in POSTER_RESULTS.values() else shown)
+            if ctx.html is not None and (plan.category == "check" or
+                                         (plan.category == "locked" and plan.current_is_qc)):
+                ctx.html.append(html_card(plex, section, item, label, plan, cats, decidable=False))
+            return
+
+        # Filter by the choices made in the review page
+        if ctx.choices is not None:
+            decision = ctx.choices.get(plan.key)
+            if decision is None:
+                status("unreviewed", "this change was not in the review page")
+                results["unreviewed"].append(shown)
+                return
+            if not decision.get("ok"):
+                detail = plan.detail
+                if opts.apply:
+                    ctx.ignored.add(plan.key, section.title, item.title, getattr(item, "year", None),
+                                    ignorelist.REASON_REJECTED, asset=plan.asset.name if is_poster else None)
+                    ctx.ignored.save()
+                    detail += " (added to the ignore list, see --unignore)"
+                status("refused", detail)
+                results["refused"].append(shown)
+                return
+            if decision.get("target") != plan.target_id:
+                status("changed", "the planned image is no longer the same as in the dry run: run a new dry run")
+                results["changed"].append(shown)
+                return
+
+        if opts.apply:
+            entry = {"ratingKey": item.ratingKey, "library": section.title, "title": label,
+                     "before": logo_id(plan.current) if plan.current is not None else None,
+                     "before_locked": plan.locked, "after": None}
+            if is_poster:
+                entry["asset"] = POSTER.name
+            entry = ctx.journal.add(entry)
+            apply_plan(item, plan)
+            if plan.locked and not opts.include_locked:
+                getattr(item, plan.asset.lock)()  # keep a hand-picked image locked (--fix-locked-quebec)
+            ctx.journal.complete(entry, plan.asset.selected_key(item))
+            ctx.changes += 1
+            status(plan.category, plan.detail)
+            if ctx.changes % BATCH_SIZE == 0:
+                log(f"  (pausing {BATCH_PAUSE:.0f} s to spare the server)")
+                time.sleep(BATCH_PAUSE)
+            else:
+                time.sleep(DELAY_AFTER_CHANGE)
+        else:
+            status(plan.category, plan.detail)
+
+        if is_poster:
+            note = "picked by OCR, replaces a Quebec poster"
+        else:
+            note = lang_name(plan.language) if plan.language and plan.chosen.startswith(lang_name(plan.language) + " logo") \
+                else "picked by OCR"
+            if plan.current_is_qc:
+                note += ", replaces a Quebec logo"
+        results[result(plan.category)].append(f"{label} ({note})")
+        if plan.mention and not is_poster:
+            results[plan.mention].append(label)
+
+        if not opts.apply:
+            ctx.pending[plan.key] = plan.target_id
+        if ctx.html is not None:
+            ctx.html.append(html_card(plex, section, item, label, plan, cats, decidable=not opts.apply))
 
     for n, item in enumerate(items, 1):
         year = f" ({item.year})" if getattr(item, "year", None) else ""
         label = f"{item.title}{year}"
         log("")
         log(f"[{n}/{len(items)}] {label}")
-        if item.ratingKey in ctx.ignored:
-            status("ignored", f"on the ignore list ({ctx.ignored.get(item.ratingKey)['reason']})")
-            results["ignored"].append(label)
-            continue
-        try:
-            logos = item.logos()
-            plan = plan_item(plex, item, logos, log, opts, languages)
-
-            if plan.category == "locked" and plan.current_is_qc:
-                results["locked_qc"].append(label)
-
-            if not plan.is_change:
-                status(plan.category, plan.detail)
-                results[plan.category].append(label)
-                if ctx.html is not None and (plan.category == "check" or
-                                             (plan.category == "locked" and plan.current_is_qc)):
-                    ctx.html.append(html_card(plex, section, item, label, plan, cats, decidable=False))
+        ignored = ctx.ignored.get(item.ratingKey)
+        # A title rejected in the review page keeps its poster check; one ignored by hand does not
+        check_poster = posters and str(item.ratingKey) + POSTER_SUFFIX not in ctx.ignored and \
+            (ignored is None or ignored.get("reason") == ignorelist.REASON_REJECTED)
+        for asset in (LOGO, POSTER):
+            if asset is POSTER and not check_poster:
                 continue
-
-            # Filter by the choices made in the review page
-            if ctx.choices is not None:
-                decision = ctx.choices.get(str(item.ratingKey))
-                if decision is None:
-                    status("unreviewed", "this title was not in the review page")
-                    results["unreviewed"].append(label)
-                    continue
-                if not decision.get("ok"):
-                    detail = plan.detail
-                    if opts.apply:
-                        ctx.ignored.add(item.ratingKey, section.title, item.title, getattr(item, "year", None),
-                                        ignorelist.REASON_REJECTED)
-                        ctx.ignored.save()
-                        detail += " (added to the ignore list, see --unignore)"
-                    status("refused", detail)
-                    results["refused"].append(label)
-                    continue
-                if decision.get("target") != plan.target_id:
-                    status("changed", "the planned logo is no longer the same as in the dry run: run a new dry run")
-                    results["changed"].append(label)
-                    continue
-
-            if opts.apply:
-                entry = ctx.journal.add({
-                    "ratingKey": item.ratingKey, "library": section.title, "title": label,
-                    "before": logo_id(plan.current) if plan.current is not None else None,
-                    "before_locked": plan.locked, "after": None,
-                })
-                apply_plan(item, plan)
-                if plan.locked and not opts.include_locked:
-                    item.lockLogo()  # keep a hand-picked logo locked (--fix-locked-quebec)
-                ctx.journal.complete(entry, selected_key(item))
-                ctx.changes += 1
-                status(plan.category, plan.detail)
-                if ctx.changes % BATCH_SIZE == 0:
-                    log(f"  (pausing {BATCH_PAUSE:.0f} s to spare the server)")
-                    time.sleep(BATCH_PAUSE)
+            what = asset.name
+            try:
+                if asset is LOGO:
+                    if ignored is not None:
+                        status("ignored", f"on the ignore list ({ignored['reason']})")
+                        results["ignored"].append(label)
+                        continue
+                    plan = plan_item(plex, item, LOGO.candidates(item), log, opts, languages)
+                    titles = plan.titles if plan.titles[0] is not None else None
                 else:
-                    time.sleep(DELAY_AFTER_CHANGE)
-            else:
-                status(plan.category, plan.detail)
-
-            note = lang_name(plan.language) if plan.language and plan.chosen.startswith(lang_name(plan.language) + " logo") \
-                else "picked by OCR"
-            if plan.current_is_qc:
-                note += ", replaces a Quebec logo"
-            results[plan.category].append(f"{label} ({note})")
-            if plan.mention:
-                results[plan.mention].append(label)
-
-            if not opts.apply:
-                ctx.pending[str(item.ratingKey)] = plan.target_id
-            if ctx.html is not None:
-                ctx.html.append(html_card(plex, section, item, label, plan, cats, decidable=not opts.apply))
-
-        except Exception as e:
-            if is_unauthorized(e):
-                raise TokenError(str(e)) from e
-            status("error", str(e))
-            results["error"].append(f"{label}: {e}")
+                    if ignored is not None:
+                        titles = quebec_titles(item, languages)
+                        if titles:
+                            log_titles(log, titles)
+                    if not titles:
+                        continue
+                    plan = plan_poster(plex, item, log, opts, languages, titles)
+                    if plan is None:
+                        continue
+                plan.key = str(item.ratingKey) + (POSTER_SUFFIX if asset is POSTER else "")
+                handle(item, label, plan)
+            except Exception as e:
+                if is_unauthorized(e):
+                    raise TokenError(str(e)) from e
+                status("error", f"{what}: {e}" if asset is POSTER else str(e))
+                results["error"].append(f"{label}{' [poster]' if asset is POSTER else ''}: {e}")
+                titles = None
 
     return results
 
@@ -934,7 +1143,9 @@ def write_library_summary(log, name, results, opts, duration):
             for title in results[key]:
                 log(f"    - {title}")
     write_mentions(log, results)
-    if not opts.apply and (results["add"] or results["replace"]):
+    if getattr(opts, "posters", False):
+        write_posters(log, results, opts)
+    if not opts.apply and changes(results):
         log("")
         log("  Dry run only: run again with --apply to apply.")
     log(LINE)
@@ -1011,6 +1222,7 @@ def prune_logs():
 
 def run(opts):
     start = time.time()
+    opts.posters = getattr(opts, "posters", False) or CHECK_POSTERS
     mode = "application" if opts.apply else "simulation"
     cats = categories_for(opts)
 
@@ -1062,7 +1274,10 @@ def run(opts):
                      [f"Content     : {section.totalSize} title(s), language {section.language}"
                       + (f"; {len(selected[name])} selected with --rating-key" if selected is not None else ""),
                       f"Logo langs  : {' > '.join(languages)}"
-                      + (" (+ Quebec logo detection)" if checks_quebec(languages) else "")],
+                      + (" (+ Quebec logo detection)" if checks_quebec(languages) else ""),
+                      f"Posters     : "
+                      + ("Quebec poster detection" if opts.posters and checks_quebec(languages)
+                         else "not checked" + ("" if opts.posters else " (see --posters)"))],
                      languages=languages)
         try:
             results = process_library(plex, section, log, opts, ctx, languages,
@@ -1088,10 +1303,14 @@ def run(opts):
     if opts.choices:
         cols[-1:-1] = [("refused", "Rejected"), ("changed", "Recheck"), ("unreviewed", "NoReview")]
     cols += [("inferred", "Inferred"), ("original", "Original"), ("unverified", "NotVerif")]
+    if opts.posters:
+        cols += [("poster_replace", "QcPoster"), ("poster_check", "PstCheck")]
     name_w = max([len(n) for n, _ in per_library] + [12])
     summary("")
     summary("  PER LIBRARY")
     summary("  (Inferred / Original / NotVerif: special mentions, already counted in Add or Replace)")
+    if opts.posters:
+        summary("  (QcPoster: Quebec posters to replace; PstCheck: Quebec posters to handle by hand)")
     summary("  " + "Library".ljust(name_w) + "".join(f"{c:>9}" for _, c in cols))
     summary("  " + "-" * (name_w + 9 * len(cols)))
     for name, results in per_library:
@@ -1113,10 +1332,12 @@ def run(opts):
             for title in totals[key]:
                 summary(f"    - {title}")
     write_mentions(summary, totals)
+    if opts.posters:
+        write_posters(summary, totals, opts)
     summary("")
     summary(f"  OCR reads: {OCR.misses} new, {OCR.hits} from the cache.")
     summary("  Title-by-title details: one file per library in this folder.")
-    to_do = len(totals["add"]) + len(totals["replace"])
+    to_do = changes(totals)
     page = None
     if ctx.html:
         page = os.path.join(run_dir, "review.html")
@@ -1139,7 +1360,6 @@ def run(opts):
 
     if opts.notify:
         notify(opts, run_dir, totals, page, time.time() - start, ctx.pending)
-    to_do = len(totals["add"]) + len(totals["replace"])
     ping_healthcheck(not totals["error"],
                      f"{len(totals['error'])} error(s)" if totals["error"]
                      else f"{to_do} change(s) to review" if to_do and not opts.apply
@@ -1250,8 +1470,8 @@ def notify(opts, run_dir, totals, page, duration, pending=None):
     errors) or NEW titles to handle by hand: those already reported by an
     earlier run do not trigger a notification every week.
     """
-    to_do = len(totals["add"]) + len(totals["replace"])
-    manual = totals["check"] + totals["locked_qc"]
+    to_do = changes(totals)
+    manual = totals["check"] + totals["locked_qc"] + totals["poster_check"] + totals["poster_locked_qc"]
     new_manual = new_manual_titles(manual, os.path.join(LOGS_DIR, ".notified-manual.json"))
     if not opts.apply:
         new_pending = new_pending_changes(pending or {}, os.path.join(LOGS_DIR, ".notified-pending.json"),
@@ -1267,7 +1487,10 @@ def notify(opts, run_dir, totals, page, duration, pending=None):
     title = f"Plex logos: {to_do} change(s) {verb}" if to_do else "Plex logos: titles to handle by hand"
     lines = []
     if to_do:
-        lines.append(f"{len(totals['add'])} addition(s), {len(totals['replace'])} Quebec logo(s) replaced")
+        line = f"{len(totals['add'])} addition(s), {len(totals['replace'])} Quebec logo(s) replaced"
+        if totals["poster_replace"]:
+            line += f", {len(totals['poster_replace'])} Quebec poster(s) replaced"
+        lines.append(line)
     if totals["unverified"]:
         lines.append(f"{len(totals['unverified'])} not verified by OCR, look at them first")
     if new_manual:
@@ -1318,14 +1541,16 @@ def undo(opts):
     done, skipped, errors = [], [], []
     for n, e in enumerate(reversed(entries), 1):
         log("")
-        log(f"[{n}/{len(entries)}] {e['library']} > {e['title']}")
+        log(f"[{n}/{len(entries)}] {e['library']} > {e['title']}"
+            + (f" [{e['asset']}]" if e.get("asset", LOGO.name) != LOGO.name else ""))
         try:
+            asset = ASSETS[e.get("asset", LOGO.name)]
             item = plex.fetchItem(int(e["ratingKey"]))
-            now = selected_key(item)
+            now = selected_key(item, asset)
             # "after" is null when the change was interrupted: the current state is unknown,
             # so the previous state is restored anyway
             if e.get("after") is not None and now != e["after"]:
-                log("  ==> [SKIPPED] the logo was changed since: left untouched")
+                log(f"  ==> [SKIPPED] the {asset.name} was changed since: left untouched")
                 skipped.append(e["title"])
                 continue
             if e["before"] is None:
@@ -1335,18 +1560,15 @@ def undo(opts):
                     # Restore the lock state too (a field can be locked with no logo)
                     item.lockLogo() if e.get("before_locked") else item.unlockLogo()
             else:
-                old = next((l for l in item.logos() if l.ratingKey == e["before"]), None)
+                old = next((l for l in asset.candidates(item) if l.ratingKey == e["before"]), None)
                 if old is None:
-                    log("  ==> [SKIPPED] Plex no longer offers the old logo")
+                    log(f"  ==> [SKIPPED] Plex no longer offers the old {asset.name}")
                     skipped.append(e["title"])
                     continue
-                what = "restore the old logo"
+                what = f"restore the old {asset.name}"
                 if opts.apply:
                     old.select()
-                    if e["before_locked"]:
-                        item.lockLogo()
-                    else:
-                        item.unlockLogo()
+                    getattr(item, asset.lock if e["before_locked"] else asset.unlock)()
             log(f"  ==> [{'RESTORED' if opts.apply else 'TO RESTORE'}] {what}")
             done.append(e["title"])
             if opts.apply:

@@ -95,7 +95,8 @@ def ask_choice(question, options, default=1):
 # config.env
 # ---------------------------------------------------------------------------
 
-KNOWN_KEYS = ("PLEX_URL", "PLEX_TOKEN", "PLEX_LIBRARIES", "PLEX_LANGUAGES", "NOTIFY_URLS", "HEALTHCHECK_URL")
+KNOWN_KEYS = ("PLEX_URL", "PLEX_TOKEN", "PLEX_LIBRARIES", "PLEX_LANGUAGES", "PLEX_POSTERS", "NOTIFY_URLS",
+              "HEALTHCHECK_URL")
 
 
 def read_config(path):
@@ -109,7 +110,8 @@ def write_config(path, values):
     envfile.write(path, ordered,
                   header=["plex-smart-logo-updater configuration, written by configure.py.",
                           "Do not publish: this file contains your Plex token and webhooks."],
-                  comments={"NOTIFY_URLS": "Webhooks for --notify (Discord, Bark or json:<url>), comma-separated",
+                  comments={"PLEX_POSTERS": "yes: also replace Quebec posters in French libraries",
+                            "NOTIFY_URLS": "Webhooks for --notify (Discord, Bark or json:<url>), comma-separated",
                             "HEALTHCHECK_URL": "Uptime Kuma push URL (or healthchecks.io URL), pinged after every run"})
 
 
@@ -238,6 +240,11 @@ def step_languages(values, plex=None):
         values["PLEX_LANGUAGES"] = codes[choice]
     else:
         values["PLEX_LANGUAGES"] = ask("Language codes in order of preference", current).replace(" ", "")
+    print()
+    print("Plex also picks Quebec posters in French libraries. The script can read the posters")
+    print("and propose a French one instead (in the review page, like the logos).")
+    enabled = values.get("PLEX_POSTERS", "").strip().lower() in ("1", "yes", "on", "true")
+    values["PLEX_POSTERS"] = "yes" if ask_yes("Also replace Quebec posters?", enabled) else "no"
 
 
 def describe_target(kind, url):

@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.5.0] - 2026-09-25
+
+### Added
+- Quebec posters: with `--posters` (or `PLEX_POSTERS=yes`, asked by the setup wizard), the poster of each title whose Quebec title differs is read with OCR; a Quebec poster is replaced with one showing the French (or original) title, picked among the first 30 posters. Other posters are never touched.
+- Poster changes use the same review page (new "Posters" filter), undo journal, notifications and ignore list as the logos; a rejected poster is ignored as `<ratingKey>:poster`, without ignoring the title's logo.
+
 ## [1.4.0] - 2026-09-25
 
 ### Added
@@ -74,6 +80,7 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.5.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.5.0
 [1.4.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.4.0
 [1.3.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.3.1
 [1.3.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.3.0

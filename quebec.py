@@ -1,5 +1,5 @@
 """
-Quebec logo detection by reading the logo text (OCR).
+Quebec logo (and poster) detection by reading the image text (OCR).
 
 Plex does not tell French (France) from French (Quebec) apart: for a fr-FR
 library it may pick a Quebec logo ("Le financier" instead of "The Banker").
@@ -81,9 +81,21 @@ def reading_order(result):
     return [b["text"] for line in lines for b in sorted(line["boxes"], key=lambda b: b["x"])]
 
 
-def read_text(img):
-    """Text read on the logo, in reading order (empty string if nothing is read)."""
-    result, _ = _engine()(_prepare(img))
+# Posters are read in color at this size (longest side, in pixels): the title is
+# large enough to be read, and the reading stays fast
+POSTER_SIDE = 1024
+
+
+def _prepare_poster(img, side=POSTER_SIDE):
+    """Whole poster in color, scaled down: the logo preparation would shrink the title too much."""
+    img = img.convert("RGB")
+    img.thumbnail((side, side))
+    return np.array(img)
+
+
+def read_text(img, poster=False):
+    """Text read on the logo (or poster), in reading order (empty string if nothing is read)."""
+    result, _ = _engine()(_prepare_poster(img) if poster else _prepare(img))
     return " ".join(reading_order(result)) if result else ""
 
 

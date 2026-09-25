@@ -14,12 +14,13 @@ CHOICES_FORMAT = "plex-smart-logo-updater/choices-v1"
 # Older formats are still accepted
 CHOICES_FORMATS = (CHOICES_FORMAT, "plex-logo-fr/choices-v1", "plex-logo-fr/choix-v1")
 THUMB_SIZE = (480, 150)
+POSTER_THUMB_SIZE = (200, 300)
 
 
-def thumbnail(img):
+def thumbnail(img, poster=False):
     """WebP thumbnail as a data URI."""
     img = img.copy()
-    img.thumbnail(THUMB_SIZE)
+    img.thumbnail(POSTER_THUMB_SIZE if poster else THUMB_SIZE)
     buf = io.BytesIO()
     img.save(buf, "WEBP", quality=80)
     return "data:image/webp;base64," + base64.b64encode(buf.getvalue()).decode()
@@ -28,7 +29,8 @@ def thumbnail(img):
 def card(library, item, label, plan, current_thumb, new_thumb, decidable, category_label, mention_label):
     fr, ca, en = plan.titles
     return {
-        "id": str(item.ratingKey),
+        "id": plan.key or str(item.ratingKey),
+        "asset": plan.asset.name,
         "library": library,
         "title": label,
         "category": plan.category,
@@ -117,6 +119,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 12px 16px; display: grid; gap
   justify-content: center; padding: 6px; position: relative; }
 body.bg-light .logo { background: #e9ecf0; }
 body.bg-check .logo { background: repeating-conic-gradient(#8a8f98 0% 25%, #b9bdc4 0% 50%) 50% / 16px 16px; }
+.card.poster .logo { height: 220px; }
 .logo img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .logo .cap { position: absolute; top: 4px; left: 6px; font-size: 10px; color: #cfd4dc; text-transform: uppercase; letter-spacing: .05em; }
 body.bg-light .logo .cap { color: #5f6878; }
@@ -198,6 +201,7 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
     ["inferred", "French inferred", c => c.mention === "inferred"],
     ["add", "Additions", c => c.category === "add"],
     ["replace", "Replacements", c => c.category === "replace"],
+    ["posters", "Posters", c => c.asset === "poster"],
     ["refused", "Rejected", c => c.decidable && decisions[c.id] === false],
     ["info", "To do by hand", c => !c.decidable],
   ];
@@ -238,8 +242,10 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
 
   function cardHtml(c) {
     const state = !c.decidable ? "info" : (decisions[c.id] ? "ok" : "no");
+    const poster = c.asset === "poster";
     const badges = [`<span class="badge">${esc(c.categoryLabel)}</span>`];
-    if (c.quebec) badges.push(`<span class="badge qc">Current logo is Quebec</span>`);
+    if (poster) badges.push(`<span class="badge">Poster</span>`);
+    if (c.quebec) badges.push(`<span class="badge qc">Current ${poster ? "poster" : "logo"} is Quebec</span>`);
     if (c.mention) badges.push(`<span class="badge warn">${esc(c.mentionLabel)}</span>`);
     const titles = c.fr ? `<div class="titles">France <b>${esc(c.fr)}</b> · Quebec <b>${esc(c.ca)}</b>` +
       (c.en ? ` · original <b>${esc(c.en)}</b>` : "") + `</div>` : "";
@@ -247,7 +253,7 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
       `<div class="actions"><button data-id="${c.id}" data-v="1" class="${decisions[c.id] ? "sel-ok" : ""}">✓ Approve</button>` +
       `<button data-id="${c.id}" data-v="0" class="${decisions[c.id] ? "" : "sel-no"}">✗ Reject</button></div>` :
       (!c.decidable ? `<div class="infonote">Nothing will be changed: do it by hand in Plex.</div>` : "");
-    return `<article class="card ${state}"><div><h2>${esc(c.title)}</h2><div class="lib">${esc(c.library)}</div></div>` +
+    return `<article class="card ${state}${poster ? " poster" : ""}"><div><h2>${esc(c.title)}</h2><div class="lib">${esc(c.library)}</div></div>` +
       `<div class="badges">${badges.join("")}</div>` +
       `<div class="logos">${logoBox(c.before, "before", c.hasBefore ? "image unavailable" : "no logo")}<span class="arrow">→</span>` +
       `${logoBox(c.after, "after", c.decidable ? "image unavailable" : "no change")}</div>` +

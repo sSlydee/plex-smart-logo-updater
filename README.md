@@ -61,6 +61,16 @@ Three **special mentions** flag logos set with less certainty:
 
 OCR results are cached (`.cache-ocr.json`): a new run only reads new logos.
 
+### Quebec posters (optional)
+
+Plex picks Quebec **posters** too: "LE FINANCIER" on the poster of *The Banker*. With `--posters` (or `PLEX_POSTERS=yes` in `config.env`, asked by the setup wizard), the same check runs on posters, in French libraries:
+
+- Only titles whose Quebec title differs from the French title are checked: the current poster is read with OCR.
+- **A Quebec poster is replaced** with a poster showing the French title, otherwise the original title, among the first 30 posters Plex offers (in Plex's order; the one Plex recommends wins a tie).
+- **Any other poster is never touched**: posters without text or with an unreadable title are never picked, since they cannot be checked.
+- No French poster found: the title is reported to do by hand. A **locked** Quebec poster is reported, and only replaced with `--fix-locked-quebec`.
+- Poster changes go through the same review page (with a "Posters" filter), undo and notifications as the logos. Rejecting a poster only puts the poster on the ignore list, not the title's logo.
+
 ## Installation
 
 New to GitHub or to the command line? This step-by-step guide takes you from zero to your first dry run. It takes about 10 minutes, most of it waiting for downloads.
@@ -229,6 +239,7 @@ A new token is only saved if the connection to Plex succeeds with it.
 | `PLEX_TOKEN` | Your Plex token ([how to find it](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)) | `xxxxxxxxxxxxxxxxxxxx` |
 | `PLEX_LIBRARIES` | Libraries to process, comma-separated | `Movies,TV Shows,Anime` |
 | `PLEX_LANGUAGES` | Languages in order of preference (optional). `auto`: each library's own language, then English | `auto` (default), or e.g. `fr-FR,en-US` for every library |
+| `PLEX_POSTERS` | `yes`: also replace [Quebec posters](#quebec-posters-optional) on every run (optional) | `no` (default) |
 | `NOTIFY_URLS` | Webhooks for `--notify`, comma-separated (optional) | see [Notifications](#notifications) |
 | `PLEX_LOGS_DIR` | Logs folder (optional) | `logs/` next to the script (default) |
 | `PLEX_OCR_CACHE` | OCR cache (optional) | `.cache-ocr.json` next to the script (default) |
@@ -300,6 +311,7 @@ In [Uptime Kuma](https://github.com/louislam/uptime-kuma): **Add New Monitor > P
 | `--html` | Write the review page `review.html` (see below) |
 | `--choices FILE` | With `--apply`: only apply the changes approved in the review page |
 | `--fix-locked-quebec` | Also replace **locked** logos detected as Quebec logos |
+| `--posters` | Also replace [Quebec posters](#quebec-posters-optional) (like `PLEX_POSTERS=yes`) |
 | `--notify` | Send a summary to the `NOTIFY_URLS` webhooks when there is something to do |
 | `--quiet` | Only print the summary (details stay in the logs) |
 | `--undo FOLDER` | Undo an application (dry run unless `--apply` is given) |

@@ -36,18 +36,24 @@ class IgnoreList:
     def label(self, rating_key):
         v = self.titles[str(rating_key)]
         year = f" ({v['year']})" if v.get("year") else ""
-        return f"{v['library']} > {v['title']}{year}"
+        asset = f" [{v['asset']}]" if v.get("asset") else ""
+        return f"{v['library']} > {v['title']}{year}{asset}"
 
     def get(self, rating_key):
         return self.titles.get(str(rating_key))
 
-    def add(self, rating_key, library, title, year, reason):
-        """Adds a title; returns False if it was already there."""
+    def add(self, rating_key, library, title, year, reason, asset=None):
+        """
+        Adds a title; returns False if it was already there. asset="poster" only
+        ignores the title's poster (key "<ratingKey>:poster"), not its logo.
+        """
         key = str(rating_key)
         if key in self.titles:
             return False
         self.titles[key] = {"library": library, "title": title, "year": year, "reason": reason,
                             "added": time.strftime("%Y-%m-%d %H:%M")}
+        if asset:
+            self.titles[key]["asset"] = asset
         return True
 
     def remove(self, rating_key):

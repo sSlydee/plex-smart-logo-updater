@@ -63,6 +63,16 @@ Trois **mentions spéciales** signalent les logos posés avec moins de certitude
 
 Les lectures OCR sont gardées dans un cache (`.cache-ocr.json`) : une relance ne relit que les nouveaux logos.
 
+### Affiches québécoises (facultatif)
+
+Plex choisit aussi des **affiches** québécoises : « LE FINANCIER » sur l'affiche de *The Banker*. Avec `--posters` (ou `PLEX_POSTERS=yes` dans `config.env`, proposé par l'assistant), la même vérification est faite sur les affiches, dans les bibliothèques en français :
+
+- Seuls les titres dont le titre québécois diffère du titre français sont vérifiés : l'affiche actuelle est lue par OCR.
+- **Une affiche québécoise est remplacée** par une affiche portant le titre français, sinon le titre original, parmi les 30 premières affiches proposées par Plex (dans l'ordre de Plex ; à égalité, celle que Plex recommande l'emporte).
+- **Aucune autre affiche n'est touchée** : une affiche sans texte ou au titre illisible n'est jamais choisie, faute de pouvoir la vérifier.
+- Aucune affiche française trouvée : le titre est signalé, à faire à la main. Une affiche québécoise **verrouillée** est signalée, et n'est remplacée qu'avec `--fix-locked-quebec`.
+- Les changements d'affiches passent par la même page de contrôle (avec un filtre « Posters »), la même annulation et les mêmes notifications que les logos. Refuser une affiche ne met que l'affiche dans les titres ignorés, pas le logo du titre.
+
 ## Installation
 
 Tu débutes avec GitHub ou la ligne de commande ? Ce guide pas à pas t'emmène de zéro jusqu'à ta première simulation. Compte une dizaine de minutes, surtout pour les téléchargements.
@@ -231,6 +241,7 @@ Un nouveau token n'est enregistré que si la connexion à Plex réussit avec lui
 | `PLEX_TOKEN` | Ton token Plex ([comment le trouver](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)) | `xxxxxxxxxxxxxxxxxxxx` |
 | `PLEX_LIBRARIES` | Bibliothèques à traiter, séparées par des virgules | `Films,Séries TV,Animations Japonaise` |
 | `PLEX_LANGUAGES` | Langues par ordre de préférence (facultatif). `auto` : la langue de chaque bibliothèque, puis l'anglais | `auto` (par défaut), ou par exemple `fr-FR,en-US` pour toutes les bibliothèques |
+| `PLEX_POSTERS` | `yes` : remplace aussi les [affiches québécoises](#affiches-québécoises-facultatif) à chaque analyse (facultatif) | `no` (par défaut) |
 | `NOTIFY_URLS` | Webhooks pour `--notify`, séparés par des virgules (facultatif) | voir [Notifications](#notifications) |
 | `PLEX_LOGS_DIR` | Dossier des logs (facultatif) | `logs/` à côté du script (par défaut) |
 | `PLEX_OCR_CACHE` | Cache des lectures OCR (facultatif) | `.cache-ocr.json` à côté du script (par défaut) |
@@ -302,6 +313,7 @@ Dans [Uptime Kuma](https://github.com/louislam/uptime-kuma) : **Add New Monitor 
 | `--html` | Génère la page de contrôle `review.html` (voir plus bas) |
 | `--choices FICHIER` | Avec `--apply` : n'applique que les changements validés dans la page de contrôle |
 | `--fix-locked-quebec` | Remplace aussi les logos **verrouillés** détectés comme québécois |
+| `--posters` | Remplace aussi les [affiches québécoises](#affiches-québécoises-facultatif) (comme `PLEX_POSTERS=yes`) |
 | `--notify` | Envoie un résumé aux webhooks de `NOTIFY_URLS` s'il y a quelque chose à faire |
 | `--quiet` | N'affiche que le résumé (le détail reste dans les logs) |
 | `--undo DOSSIER` | Annule une application (simulation, sauf avec `--apply`) |
