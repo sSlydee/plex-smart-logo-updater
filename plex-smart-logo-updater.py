@@ -55,7 +55,7 @@ import notify as notifier
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-__version__ = "1.3.1"
+__version__ = "1.4.0"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -94,6 +94,8 @@ def checks_quebec(languages):
 LOGS_DIR = os.environ.get("PLEX_LOGS_DIR", os.path.join(HERE, "logs"))
 OCR_CACHE_PATH = os.environ.get("PLEX_OCR_CACHE", os.path.join(HERE, ".cache-ocr.json"))
 IGNORE_PATH = os.environ.get("PLEX_IGNORE_FILE", os.path.join(HERE, "ignored.json"))
+# Titles queued by tautulli-hook.sh, processed by --process-queue
+QUEUE_PATH = os.path.join(LOGS_DIR, "tautulli-queue.txt")
 LOGS_KEEP = int(os.environ.get("PLEX_LOGS_KEEP", "100"))
 CRON_LOG_MAX_BYTES = 5 * 1024 * 1024
 # Uptime Kuma push URL (or healthchecks.io-style URL) pinged after every run
@@ -147,6 +149,8 @@ def parse_args():
     p.add_argument("--rating-key", metavar="KEY", action="append", dest="rating_keys",
                    help="only process these titles (Plex ratingKey; an episode or season counts as its show). "
                         "Used by the Tautulli hook (tautulli-hook.sh)")
+    p.add_argument("--process-queue", action="store_true",
+                   help="process the titles queued by tautulli-hook.sh (does nothing when the queue is empty)")
     p.add_argument("--ignore", metavar="TITLE", action="append",
                    help='never touch this title again: "Library/Title", "Title (year)" or a ratingKey '
                         "(repeatable)")
@@ -1364,6 +1368,25 @@ def undo(opts):
     log.close()
 
 
+def take_queue(path=None):
+    """
+    Returns the ratingKeys queued by tautulli-hook.sh and empties the queue.
+    The file is renamed first, so keys added meanwhile go to a new queue file.
+    """
+    path = path or QUEUE_PATH
+    taking = path + ".processing"
+    try:
+        os.replace(path, taking)
+    except FileNotFoundError:
+        return []
+    try:
+        with open(taking, encoding="utf-8") as f:
+            keys = [k for line in f for k in re.split(r"[\s,]+", line) if k.isdigit()]
+    finally:
+        os.remove(taking)
+    return list(dict.fromkeys(keys))  # without duplicates, in order
+
+
 # ---------------------------------------------------------------------------
 # Ignore list
 # ---------------------------------------------------------------------------
@@ -1446,6 +1469,11 @@ if __name__ == "__main__":
     else:
         try:
             with run_lock():
+                if options.process_queue:
+                    queued = take_queue()
+                    if not queued:
+                        raise SystemExit(0)  # nothing queued: no run, no log, no ping
+                    options.rating_keys = (options.rating_keys or []) + queued
                 run(options)
         except Exception as crash:
             # Unexpected crash: tell the monitoring before showing the traceback

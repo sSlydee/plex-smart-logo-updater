@@ -215,6 +215,7 @@ To redo a single step:
 | `configure.py --language` | Logo language |
 | `configure.py --notifications` | Webhooks |
 | `configure.py --cron` | Automatic run |
+| `configure.py --tautulli` | Queue processing for the Tautulli hook |
 
 A new token is only saved if the connection to Plex succeeds with it.
 
@@ -275,13 +276,14 @@ In Tautulli: **Settings > Notification Agents > Add a new notification agent > S
 | Triggers | **Recently Added** |
 | Arguments > Recently Added | `{rating_key}` |
 
-- The hook starts a dry run with the review page and `--notify` in the background, so Tautulli is not kept waiting; its output goes to `logs/tautulli.log`.
+- The hook adds the title to a queue (`logs/tautulli-queue.txt`). When it can run the script's Python environment, it processes the queue right away in the background (dry run, review page, `--notify`; output in `logs/tautulli.log`).
+- **Tautulli in a container** (common on seedboxes, e.g. linuxserver images): the container can reach the project folder but usually not its Python environment. Turn on queue processing with `.venv/bin/python configure.py --tautulli`: a cron job processes the queue every 5 minutes, and does nothing when it is empty. The Script Folder must be the path **as the container sees it** (often `/home/<user>/...`).
 - An episode or a season counts as its show, and titles outside `PLEX_LIBRARIES` are skipped.
 - A season imported episode by episode does not flood you: a pending change is notified once; the weekly run still sends a reminder while it is waiting for your review.
 - Runs started at the same time wait for each other.
 - If a logo is missing right after the import (Plex still fetching metadata), the weekly run catches it.
 
-You can also run it by hand: `.venv/bin/python plex-smart-logo-updater.py --rating-key 12345 --html`.
+You can also run it by hand: `.venv/bin/python plex-smart-logo-updater.py --rating-key 12345 --html`, or process the queue with `--process-queue`.
 
 ### Monitoring with Uptime Kuma
 
@@ -302,6 +304,7 @@ In [Uptime Kuma](https://github.com/louislam/uptime-kuma): **Add New Monitor > P
 | `--quiet` | Only print the summary (details stay in the logs) |
 | `--undo FOLDER` | Undo an application (dry run unless `--apply` is given) |
 | `--rating-key KEY` | Only process these titles (see [Tautulli](#instant-processing-with-tautulli)) |
+| `--process-queue` | Process the titles queued by the Tautulli hook (nothing when the queue is empty) |
 | `--ignore TITLE` | Never touch this title again (see [Ignore list](#ignore-list)) |
 | `--unignore TITLE` | Remove a title from the ignore list |
 | `--list-ignored` | Show the ignore list |

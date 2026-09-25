@@ -10,7 +10,7 @@ Usage:
   .venv/bin/python configure.py                   full setup
   .venv/bin/python configure.py --token           change the token only
   .venv/bin/python configure.py --token <token>   same, without prompting (the token is tested)
-  .venv/bin/python configure.py --server | --libraries | --language | --notifications | --cron
+  .venv/bin/python configure.py --server | --libraries | --language | --notifications | --cron | --tautulli
                                                   redo a single step
 """
 import argparse
@@ -27,7 +27,12 @@ import envfile  # noqa: E402
 HERE = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.environ.get("PLEX_CONFIG", os.path.join(HERE, "config.env"))
 CRON_TAG = "# plex-smart-logo-updater (managed by configure.py)"
-CRON_MARK = "# plex-smart-logo-updater"
+QUEUE_TAG = "# plex-smart-logo-updater tautulli queue (managed by configure.py)"
+
+
+def is_run_line(line):
+    """The weekly/daily run line (older versions used a slightly different tag)."""
+    return "# plex-smart-logo-updater" in line and QUEUE_TAG not in line
 
 TOKEN_HELP = "https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/"
 LANGUAGE_CHOICES = [
@@ -309,9 +314,9 @@ def step_cron():
         print("cron is not available on this machine: step skipped.")
         return
     lines = existing.splitlines()
-    ours = [l for l in lines if CRON_MARK in l]
+    ours = [l for l in lines if is_run_line(l)]
     if ours:
-        print("Current automatic run: " + ours[0].split(CRON_MARK)[0].strip())
+        print("Current automatic run: " + ours[0].split("# plex-smart-logo-updater")[0].strip())
     print("The script runs a DRY RUN (nothing is changed), writes the review page")
     print("and notifies you when titles need review.")
     choice = ask_choice("Frequency", ["never" + (" (remove the current one)" if ours else ""),
@@ -319,7 +324,7 @@ def step_cron():
                                       "keep the current setting"], 4 if ours else 3)
     if choice == 3:
         return
-    others = [l for l in lines if CRON_MARK not in l]
+    others = [l for l in lines if not is_run_line(l)]
     if choice == 0:
         new_lines = others
     else:
@@ -341,6 +346,37 @@ def step_cron():
     print("  ✓ crontab updated.")
 
 
+def step_tautulli():
+    title("Tautulli: process new titles right away (optional)")
+    existing = current_cron()
+    if existing is None:
+        print("cron is not available on this machine: step skipped.")
+        return
+    lines = existing.splitlines()
+    active = any(QUEUE_TAG in l for l in lines)
+    print("tautulli-hook.sh queues the titles Plex adds. If Tautulli runs in a container (common on")
+    print("seedboxes), it cannot run the script itself: a cron job processes the queue every few minutes.")
+    print(f"Queue processing is currently {'ON' if active else 'OFF'}.")
+    choice = ask_choice("Queue processing", ["on, every 5 minutes", "off", "keep the current setting"],
+                        3 if active else 1)
+    if choice == 2:
+        return
+    others = [l for l in lines if QUEUE_TAG not in l]
+    if choice == 0:
+        python = os.path.join(HERE, ".venv", "bin", "python")
+        command = (f"cd {shlex.quote(HERE)} && mkdir -p logs && {shlex.quote(python)} plex-smart-logo-updater.py "
+                   f"--process-queue --html --notify --quiet >> logs/tautulli.log 2>&1")
+        others.append(f"*/5 * * * * {command} {QUEUE_TAG}")
+    text = "\n".join(others) + ("\n" if others else "")
+    subprocess.run(["crontab", "-"], input=text, text=True, check=True)
+    print("  ✓ crontab updated.")
+    if choice == 0:
+        print()
+        print("Now, in Tautulli: Settings > Notification Agents > Add a new notification agent > Script")
+        print(f"  Script Folder: {HERE}")
+        print("  Script File: tautulli-hook.sh   Triggers: Recently Added   Arguments: {rating_key}")
+
+
 def parse_args():
     p = argparse.ArgumentParser(description="plex-smart-logo-updater setup wizard (writes config.env).")
     p.add_argument("--token", nargs="?", const="", metavar="TOKEN",
@@ -350,6 +386,7 @@ def parse_args():
     p.add_argument("--language", action="store_true", help="redo the logo language only")
     p.add_argument("--notifications", action="store_true", help="redo the notifications only")
     p.add_argument("--cron", action="store_true", help="redo the automatic run only")
+    p.add_argument("--tautulli", action="store_true", help="turn on/off processing of titles queued by Tautulli")
     # Former French names, still accepted
     p.add_argument("--serveur", dest="server", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--bibliotheques", dest="libraries", action="store_true", help=argparse.SUPPRESS)
@@ -366,10 +403,10 @@ def main():
     args = parse_args()
     values = read_config(CONFIG_PATH)
     partial = args.token is not None or args.server or args.libraries or args.language \
-        or args.notifications or args.cron
+        or args.notifications or args.cron or args.tautulli
 
     if partial:
-        if not values and not args.cron:
+        if not values and not (args.cron or args.tautulli):
             sys.exit(f"No configuration yet ({CONFIG_PATH}): run configure.py without options first.")
         plex = None
         if args.token is not None:
@@ -391,6 +428,8 @@ def main():
             save(values)
         if args.cron:
             step_cron()
+        if args.tautulli:
+            step_tautulli()
         return
 
     print("plex-smart-logo-updater setup")

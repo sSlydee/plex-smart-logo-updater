@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.4.0] - 2026-09-25
+
+### Added
+- Tautulli running in a container (common on seedboxes): `tautulli-hook.sh` now queues the added titles (`logs/tautulli-queue.txt`); `--process-queue` processes the queue, and `configure.py --tautulli` installs a cron job that does it every 5 minutes (nothing happens when the queue is empty).
+- The hook still processes the queue immediately when it can run the script's Python environment.
+
 ## [1.3.1] - 2026-09-24
 
 ### Fixed
@@ -68,6 +74,7 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.4.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.4.0
 [1.3.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.3.1
 [1.3.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.3.0
 [1.2.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.2.1

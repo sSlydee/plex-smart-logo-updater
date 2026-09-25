@@ -320,3 +320,22 @@ def test_prune_logs_handles_suffixed_folders(main, tmp_path, monkeypatch):
     monkeypatch.setattr(main, "LOGS_KEEP", 1)
     main.prune_logs()
     assert sorted(p.name for p in tmp_path.iterdir()) == ["2026-01-02_10h00m00s_simulation"]
+
+
+# --- Tautulli queue ------------------------------------------------------------------
+
+def test_take_queue_returns_unique_keys_and_empties_the_queue(main, tmp_path):
+    queue = tmp_path / "queue.txt"
+    queue.write_text("123\n456\n123\nnot-a-key\n789 101\n")
+    assert main.take_queue(str(queue)) == ["123", "456", "789", "101"]
+    assert not queue.exists()
+    assert main.take_queue(str(queue)) == []   # empty queue: nothing to do
+
+
+def test_cron_lines_are_told_apart(configure):
+    run_line = "0 6 * * 1 cd x && python plex-smart-logo-updater.py --html " + configure.CRON_TAG
+    old_run_line = "0 6 * * 1 cd x && python run.py # plex-smart-logo-updater (géré par configure.py)"
+    queue_line = "*/5 * * * * cd x && python plex-smart-logo-updater.py --process-queue " + configure.QUEUE_TAG
+    assert configure.is_run_line(run_line) and configure.is_run_line(old_run_line)
+    assert not configure.is_run_line(queue_line)
+    assert not configure.is_run_line("*/3 * * * * other-script.py")

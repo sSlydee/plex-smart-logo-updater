@@ -217,6 +217,7 @@ Pour ne refaire qu'une étape :
 | `configure.py --language` | Langue des logos |
 | `configure.py --notifications` | Webhooks |
 | `configure.py --cron` | Analyse automatique |
+| `configure.py --tautulli` | Traitement de la file du hook Tautulli |
 
 Un nouveau token n'est enregistré que si la connexion à Plex réussit avec lui.
 
@@ -277,13 +278,14 @@ Dans Tautulli : **Settings > Notification Agents > Add a new notification agent 
 | Triggers | **Recently Added** |
 | Arguments > Recently Added | `{rating_key}` |
 
-- Le hook lance en arrière-plan une simulation avec la page de contrôle et `--notify`, pour ne pas faire attendre Tautulli ; sa sortie va dans `logs/tautulli.log`.
+- Le hook ajoute le titre à une file d'attente (`logs/tautulli-queue.txt`). S'il peut lancer l'environnement Python du script, il traite la file tout de suite en arrière-plan (simulation, page de contrôle, `--notify` ; sortie dans `logs/tautulli.log`).
+- **Tautulli dans un conteneur** (fréquent sur les seedbox, par exemple les images linuxserver) : le conteneur accède au dossier du projet mais en général pas à son environnement Python. Active le traitement de la file avec `.venv/bin/python configure.py --tautulli` : une tâche cron traite la file toutes les 5 minutes, et ne fait rien quand elle est vide. Le Script Folder doit être le chemin **tel que le conteneur le voit** (souvent `/home/<utilisateur>/...`).
 - Un épisode ou une saison compte pour sa série, et les titres hors de `PLEX_LIBRARIES` sont ignorés.
 - Une saison importée épisode par épisode ne t'inonde pas : un changement en attente n'est notifié qu'une fois ; l'analyse hebdomadaire envoie quand même un rappel tant qu'il attend ta validation.
 - Des analyses lancées en même temps s'attendent l'une l'autre.
 - Si un logo manque juste après l'import (Plex encore en train de récupérer les métadonnées), l'analyse hebdomadaire le rattrape.
 
-Tu peux aussi le lancer à la main : `.venv/bin/python plex-smart-logo-updater.py --rating-key 12345 --html`.
+Tu peux aussi le lancer à la main : `.venv/bin/python plex-smart-logo-updater.py --rating-key 12345 --html`, ou traiter la file avec `--process-queue`.
 
 ### Surveillance avec Uptime Kuma
 
@@ -304,6 +306,7 @@ Dans [Uptime Kuma](https://github.com/louislam/uptime-kuma) : **Add New Monitor 
 | `--quiet` | N'affiche que le résumé (le détail reste dans les logs) |
 | `--undo DOSSIER` | Annule une application (simulation, sauf avec `--apply`) |
 | `--rating-key CLÉ` | Ne traite que ces titres (voir [Tautulli](#traitement-immédiat-avec-tautulli)) |
+| `--process-queue` | Traite les titres mis en file par le hook Tautulli (rien si la file est vide) |
 | `--ignore TITRE` | Ne plus jamais toucher à ce titre (voir [Titres ignorés](#titres-ignorés)) |
 | `--unignore TITRE` | Retire un titre de la liste des titres ignorés |
 | `--list-ignored` | Affiche la liste des titres ignorés |
