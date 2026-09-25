@@ -222,7 +222,7 @@ def step_libraries(values, plex):
 
 
 def step_languages(values, plex=None):
-    title("3. Logo language")
+    title("3. Logo language and posters")
     print("Languages to try, in order. With \"auto\", each library uses the language set in Plex")
     print("(then English); the Quebec logo detection runs for French libraries.")
     if plex is not None:

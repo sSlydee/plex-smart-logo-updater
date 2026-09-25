@@ -1,109 +1,86 @@
-# plex smart logo updater
+# Plex Smart Logo Updater
 
-[![Tests](https://github.com/sSlydee/plex-smart-logo-updater/actions/workflows/tests.yml/badge.svg)](https://github.com/sSlydee/plex-smart-logo-updater/actions/workflows/tests.yml) [![Release](https://img.shields.io/github/v/release/sSlydee/plex-smart-logo-updater)](https://github.com/sSlydee/plex-smart-logo-updater/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Tests](https://github.com/sSlydee/plex-smart-logo-updater/actions/workflows/tests.yml/badge.svg)](https://github.com/sSlydee/plex-smart-logo-updater/actions/workflows/tests.yml) [![Release](https://img.shields.io/github/v/release/sSlydee/plex-smart-logo-updater)](https://github.com/sSlydee/plex-smart-logo-updater/releases) [![Licence : MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Des logos Plex (ClearLogo) mieux choisis : le bon logo dans la langue de chaque bibliothèque, l'anglais en secours, et pas de logos québécois dans les bibliothèques françaises.**
-
-L'interface du script (messages, logs, page de contrôle, assistant) est en anglais. Cette page en décrit le fonctionnement en français.
+**Des logos Plex (ClearLogo) dans la langue de chaque bibliothèque, avec l'anglais en secours. Dans les bibliothèques françaises, le script remplace aussi les logos québécois que Plex choisit par erreur, et en option les affiches québécoises.**
 
 🇬🇧 [English version](README.md)
 
-Script Python qui donne à tes films et séries Plex un **logo de qualité dans la langue de leur bibliothèque**, y compris aux nombreux titres que Plex laisse sans logo. Pour les bibliothèques en français, il repère et remplace aussi les **logos québécois** que Plex pose parfois par erreur.
-
-Chaque changement est d'abord prévisualisé : simulation, page de contrôle pour valider ou refuser chaque logo, et journal d'annulation.
-
-Basé sur [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-logo-updater) (licence MIT).
+> Le script, ses messages, ses logs et sa page de contrôle sont en anglais. Ce document les décrit en français.
 
 ![Page de contrôle : logos québécois (à gauche) remplacés par des logos français (à droite)](docs/review-quebec.png)
 
-## Le problème
+## Pourquoi
 
-Plex ne pose un logo automatiquement **que s'il en existe un dans la langue de la bibliothèque**. Dans une bibliothèque en français, en allemand ou en espagnol, un titre sans logo dans cette langue reste donc sans logo, même s'il en existe un bon en anglais. C'est très fréquent pour les animes et les films étrangers.
+- **Beaucoup de titres n'ont pas de logo.** Plex ne pose un logo automatiquement que s'il en existe un dans la langue de la bibliothèque. Dans une bibliothèque française, allemande ou espagnole, un titre reste donc sans logo même quand un bon logo anglais existe. C'est très fréquent pour les animés et les films étrangers.
+- **Les bibliothèques françaises reçoivent des logos québécois.** Plex ne distingue pas le français de France du français du Québec. *The Banker* peut se retrouver avec un logo « Le financier », et *Edge of Tomorrow* avec « Un jour sans lendemain ».
+- **Même chose pour les affiches.** *Bad Boys 2* peut afficher « Mauvais garçons II », et *Land of Bad* « Territoire hostile ».
 
-Les bibliothèques en français ont un second piège : **Plex ne distingue pas le français de France du français du Québec.** Il peut poser un logo québécois dans une bibliothèque française. Le titre affiché est alors « The Banker » alors que le logo indique « Le financier » ; de même, « Edge of Tomorrow » peut s'afficher avec le logo « Un jour sans lendemain ».
+## Ce que fait le script
 
-Le script d'origine se contentait de prendre le premier logo de la liste, qui peut être dans la mauvaise langue ou de mauvaise qualité.
+- **Il ajoute les logos manquants.** Pour un titre sans logo, le script demande à Plex le logo recommandé, d'abord dans la langue de la bibliothèque, puis en anglais. C'est le logo que Plex aurait choisi lui-même, et aucune clé TMDB n'est nécessaire.
+- **Il remplace les logos québécois**, et en option les affiches québécoises. Il lit le texte de l'image (OCR) et le compare aux titres français, québécois et original.
+- **Il ne touche à rien d'autre.** Un logo existant est gardé, sauf s'il est québécois. Les logos et affiches que vous avez choisis vous-même (champs verrouillés) ne sont jamais remplacés.
+- **Il ne change rien sans votre accord.** Chaque lancement est une simulation par défaut. Une page de contrôle montre chaque changement (avant et après) pour que vous le validiez ou le refusiez. Chaque application peut être annulée.
+- **Il peut tourner tout seul.** Il peut analyser vos bibliothèques à intervalle régulier (chaque jour ou chaque semaine), vérifier les nouveaux titres dès que Plex les ajoute (avec Tautulli), et vous envoyer une notification (Discord, Bark…) quand il y a quelque chose à valider.
 
-Par défaut, chaque bibliothèque utilise **sa propre langue** (celle réglée dans Plex), puis l'anglais : une bibliothèque en français reçoit des logos français, une bibliothèque allemande des logos allemands, une bibliothèque anglaise des logos anglais.
+Basé sur [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-logo-updater) (licence MIT).
 
-## Ce que fait `plex-smart-logo-updater.py`
+## Sommaire
 
-Pour chaque titre des bibliothèques choisies :
+- [Démarrage rapide](#démarrage-rapide)
+- [Installation pas à pas](#installation-pas-à-pas)
+- [Utilisation au quotidien](#utilisation-au-quotidien) : simulation, contrôle, application, titres ignorés, annulation
+- [Automatisation](#automatisation) : analyse automatique, notifications, Tautulli, Uptime Kuma
+- [Référence](#référence) : assistant, réglages, options
+- [Comment ça marche](#comment-ça-marche) : choix de la langue, détection du Québec, affiches
+- [Logs](#logs)
+- [Problèmes courants](#problèmes-courants) · [Bon à savoir](#bon-à-savoir) · [Tests](#tests)
 
-1. **Il ne touche jamais à un logo choisi à la main** (verrouillé), sauf avec `--fix-locked-quebec` s'il est québécois. Un champ verrouillé *sans* logo reçoit une proposition comme tout titre sans logo : refuse-la dans la page de contrôle pour garder le titre tel quel (il rejoint alors les [titres ignorés](#titres-ignorés)). Il ne touche pas non plus aux logos posés par Plex, **sauf s'ils sont québécois**.
-2. **Pour les titres sans logo, il demande à Plex le logo qu'il recommande**, dans la langue de la bibliothèque d'abord, puis en anglais s'il n'y en a pas. C'est exactement le logo que Plex aurait choisi lui-même. Le script interroge pour cela le service de métadonnées de Plex (`metadata.provider.plex.tv`) avec ton token Plex, sans clé TMDB.
-3. **Il retrouve ce logo parmi ceux proposés par ton serveur** (même URL ou image identique au pixel près) et le sélectionne. Il ne l'ajoute depuis Internet que s'il ne le trouve pas.
+## Démarrage rapide
 
-Par défaut, le script fait une **simulation** : il affiche ce qu'il ferait sans rien modifier.
-
-### Détection des logos québécois
-
-Pour chaque titre, le script compare le titre français (fr-FR) et le titre québécois (fr-CA) donnés par Plex. S'ils diffèrent, il **lit le texte du logo** par reconnaissance de caractères (OCR, module `quebec.py`) et le compare aux titres français, québécois et original :
-
-- **Un logo québécois posé par Plex est remplacé** par le meilleur logo non québécois : celui dont le texte est le plus proche du **titre français complet**, sinon du titre original. À ressemblance égale, le script préfère, dans l'ordre :
-  1. un logo **sans texte en trop** (noms d'acteurs, slogans ; « Marvel Studios », « Disney »… sont tolérés) ;
-  2. un logo du **même style** que le logo remplacé (en couleur ou blanc) ;
-  3. celui que Plex recommande ;
-  4. le plus grand.
-- Quand le titre français diffère du titre original et que le logo recommandé par Plex n'est pas clairement français (logo anglais, illisible…), le script cherche un logo au titre français parmi les autres (ex. « HAPPY BIRTHDEAD » plutôt que « HAPPY DEATH DAY »). Si le titre est le même en France et en version originale, le choix de Plex est gardé.
-- **Un logo québécois n'est jamais ajouté.** Si Plex recommande un logo québécois, le script cherche un autre logo parmi ceux proposés.
-- S'il n'existe **que** des logos québécois, le titre est marqué `[CHECK]` : à faire à la main.
-- Un logo **verrouillé** qui semble québécois est signalé dans les logs. Il n'est remplacé qu'avec `--fix-locked-quebec`.
-- Quand le Québec garde le titre original (« Black Box Diaries »), un logo à ce titre n'est **pas** considéré comme québécois.
-
-La détection est volontairement prudente : un logo déjà en place n'est remplacé que s'il est clairement lu comme québécois.
-
-Trois **mentions spéciales** signalent les logos posés avec moins de certitude :
-
-| Mention | Signification |
-|---|---|
-| `[FRENCH INFERRED]` (français déduit) | Le titre français est lu sur le logo et les mots propres au titre québécois en sont absents (ex. « PUSH », alors que le Québec dit « Push : La division »). Très probablement correct. |
-| `[ORIGINAL TITLE]` (titre original) | Le logo porte le titre original, ni français ni québécois (ex. « HAPPY DEATH DAY » pour *Happy Birthdead*). |
-| `[NOT VERIFIED]` (non vérifié) | L'OCR n'a pas pu lire le logo (police trop stylisée, lettres espacées…). Le logo est posé quand même, comme Plex l'aurait fait : **à contrôler**. |
-
-Les lectures OCR sont gardées dans un cache (`.cache-ocr.json`) : une relance ne relit que les nouveaux logos.
-
-### Affiches québécoises (facultatif)
-
-Plex choisit aussi des **affiches** québécoises : « LE FINANCIER » sur l'affiche de *The Banker*. Avec `--posters` (ou `PLEX_POSTERS=yes` dans `config.env`, proposé par l'assistant), la même vérification est faite sur les affiches, dans les bibliothèques en français :
-
-- Seuls les titres dont le titre québécois diffère du titre français sont vérifiés : l'affiche actuelle est lue par OCR.
-- **Une affiche québécoise est remplacée** par une affiche portant le titre français, sinon le titre original, parmi les 30 premières affiches proposées par Plex (dans l'ordre de Plex ; à égalité, celle que Plex recommande l'emporte).
-- **Aucune autre affiche n'est touchée** : une affiche sans texte ou au titre illisible n'est jamais choisie, faute de pouvoir la vérifier.
-- Aucune affiche française trouvée : le titre est signalé, à faire à la main. Une affiche québécoise **verrouillée** est signalée, et n'est remplacée qu'avec `--fix-locked-quebec`.
-- Les changements d'affiches passent par la même page de contrôle (avec un filtre « Posters »), la même annulation et les mêmes notifications que les logos. Refuser une affiche ne met que l'affiche dans les titres ignorés, pas le logo du titre.
-
-## Installation
-
-Tu débutes avec GitHub ou la ligne de commande ? Ce guide pas à pas t'emmène de zéro jusqu'à ta première simulation. Compte une dizaine de minutes, surtout pour les téléchargements.
-
-### Ce qu'il te faut
-
-- **Une machine Linux qui accède à ton serveur Plex** : le serveur Plex lui-même, une seedbox, un NAS, un VPS… Testé sous Linux ; macOS devrait fonctionner ; sous Windows, utilise [WSL](https://learn.microsoft.com/fr-fr/windows/wsl/install).
-- **Python 3.8 ou plus récent** et **git**.
-- **Ton token Plex** ([comment le trouver](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)).
-- Environ **500 Mo d'espace libre** pour l'environnement Python (le moteur OCR en est la plus grosse partie).
-
-### Étape 1 — Ouvrir un terminal sur la machine
-
-Si la machine est distante (seedbox, NAS, VPS), connecte-toi en SSH depuis ton ordinateur : ouvre un terminal (PowerShell sous Windows, Terminal sous macOS/Linux) et tape :
+Pour les habitués du terminal. Linux (ou macOS, ou WSL sous Windows), Python 3.8+ et git :
 
 ```bash
-ssh ton_utilisateur@adresse_du_serveur
+git clone https://github.com/sSlydee/plex-smart-logo-updater.git
+cd plex-smart-logo-updater
+./install.sh                                          # installe dans .venv, puis lance l'assistant
+.venv/bin/python plex-smart-logo-updater.py --html    # simulation + page de contrôle
 ```
 
-Vérifie ensuite que Python et git sont installés :
+Suivez ensuite les étapes de l'[utilisation au quotidien](#utilisation-au-quotidien).
+
+## Installation pas à pas
+
+Vous débutez avec GitHub ou le terminal ? Ce guide vous amène de zéro à votre première simulation en une dizaine de minutes, passées pour l'essentiel à attendre les téléchargements.
+
+### Ce qu'il vous faut
+
+- **Une machine qui accède à votre serveur Plex** : le serveur Plex lui-même, une seedbox, un NAS, un VPS… Le script est testé sous Linux. macOS devrait fonctionner, et sous Windows il faut passer par [WSL](https://learn.microsoft.com/fr-fr/windows/wsl/install).
+- **Python 3.8 ou plus récent** et **git**.
+- **Votre token Plex** ([comment le trouver](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)).
+- Environ **500 Mo d'espace disque** pour l'environnement Python. Le moteur OCR en est la plus grosse partie.
+
+### 1. Ouvrir un terminal sur la machine
+
+Si la machine est distante, connectez-vous en SSH. Sur votre ordinateur, ouvrez un terminal (PowerShell sous Windows, Terminal sous macOS/Linux) et tapez :
+
+```bash
+ssh votre_utilisateur@adresse_du_serveur
+```
+
+Vérifiez ensuite que Python et git sont installés :
 
 ```bash
 python3 --version
 git --version
 ```
 
-Chaque commande doit afficher un numéro de version (Python doit être en 3.8 ou plus). S'il en manque un, installe-le avec le gestionnaire de paquets de ton système (par exemple `sudo apt install python3 python3-venv git` sous Debian/Ubuntu) ou demande à ton hébergeur.
+Chaque commande doit afficher un numéro de version, et Python doit être en 3.8 ou plus. S'il en manque un, installez-le avec le gestionnaire de paquets de votre système (sous Debian/Ubuntu : `sudo apt install python3 python3-venv git`) ou demandez à votre hébergeur.
 
-### Étape 2 — Télécharger le projet (« cloner » le dépôt)
+### 2. Télécharger le projet
 
-Place-toi dans le dossier où tu veux l'installer (ton dossier personnel convient très bien), puis clone le dépôt. Cloner télécharge le projet et garde le lien avec GitHub, ce qui permet de le mettre à jour plus tard en une commande.
+Cloner le dépôt télécharge le projet et conserve le lien avec GitHub, ce qui permet de le mettre à jour plus tard en une seule commande :
 
 ```bash
 cd ~
@@ -111,61 +88,41 @@ git clone https://github.com/sSlydee/plex-smart-logo-updater.git
 cd plex-smart-logo-updater
 ```
 
-Tu as maintenant un dossier `plex-smart-logo-updater` qui contient les scripts.
-
-### Étape 3 — Installer
+### 3. Installer
 
 ```bash
 ./install.sh
 ```
 
-L'installateur crée un environnement Python dédié dans le dossier `.venv` (rien n'est installé sur le reste du système), télécharge les dépendances (quelques minutes), puis lance l'**assistant de configuration**.
+L'installateur crée un environnement Python dédié dans le dossier `.venv`, donc rien n'est installé sur le système. Il télécharge les dépendances (quelques minutes), puis lance l'assistant de configuration.
 
-L'installateur remplace OpenCV 5, installé avec l'OCR, par une version plus ancienne : sur certaines machines, OpenCV 5 plante au chargement.
+### 4. Répondre à l'assistant
 
-### Étape 4 — Répondre à l'assistant
-
-L'assistant pose cinq questions (en anglais) ; appuie sur Entrée pour accepter la valeur affichée entre `[crochets]`.
+Appuyez sur Entrée pour garder la valeur affichée entre `[crochets]`.
 
 1. **Adresse du serveur Plex** : l'adresse **locale** du serveur, avec son port.
    - Le script tourne sur le serveur Plex lui-même : `http://127.0.0.1:32400`.
    - Plex tourne dans Docker sur la même machine : souvent `http://172.17.0.1:32400`.
-   - Une autre machine de ton réseau : `http://192.168.x.x:32400`.
+   - Une autre machine du réseau : `http://192.168.x.x:32400`.
 
-   Évite un nom de domaine public derrière un reverse proxy : le nombre de requêtes pourrait te faire bloquer par Fail2Ban ou CrowdSec.
-2. **Token Plex** : colle-le (rien ne s'affiche pendant que tu le colles, c'est normal). L'assistant teste la connexion tout de suite.
-3. **Bibliothèques** : tape les numéros des bibliothèques à traiter, séparés par des virgules (par exemple `1,3,4`), ou `all`.
-4. **Langue des logos** : garde `auto` (la langue de chaque bibliothèque, puis l'anglais), sauf raison particulière.
-5. **Notifications** et **analyse automatique** : facultatives, tu peux répondre `n` / `never` maintenant et y revenir plus tard (voir [Configuration](#configuration)).
+   Évitez un nom de domaine public derrière un reverse proxy. Le script envoie beaucoup de requêtes, et Fail2Ban ou CrowdSec pourraient le bloquer.
+2. **Token Plex** : collez-le. Rien ne s'affiche pendant que vous collez, c'est normal. L'assistant teste la connexion tout de suite.
+3. **Bibliothèques** : les numéros des bibliothèques à traiter, séparés par des virgules (ex. `1,3,4`), ou `all`.
+4. **Langue des logos** : gardez `auto` (la langue de chaque bibliothèque, puis l'anglais). L'assistant demande ensuite s'il faut aussi remplacer les [affiches québécoises](#affiches-québécoises).
+5. **Notifications** : facultatives. Répondez `n` pour ne pas ajouter de webhook, puis laissez vide l'URL Uptime Kuma.
+6. **Analyse automatique** : Entrée programme une simulation chaque semaine. Choisissez `never` (tapez `1`) si vous préférez commencer à la main ; vous pourrez l'ajouter plus tard.
 
-Tes réponses sont enregistrées dans `config.env`, lisible par toi seul.
+Vos réponses sont enregistrées dans `config.env`, un fichier lisible par vous seul.
 
-### Étape 5 — Première simulation
+### 5. Première simulation
 
 ```bash
 .venv/bin/python plex-smart-logo-updater.py --html
 ```
 
-Rien n'est modifié dans Plex. Le premier lancement est plus long (environ 7 minutes pour 300 films), car il lit les logos ; les suivants utilisent un cache. À la fin, le résumé indique ce qui changerait et où se trouve la page de contrôle (`review.html`).
+Rien n'est modifié dans Plex. La première analyse prend du temps (environ 7 minutes pour 300 films) parce qu'elle lit les logos. Les suivantes utilisent un cache et vont bien plus vite. À la fin, le résumé indique ce qui changerait et où se trouve la page de contrôle.
 
-Suis ensuite la [méthode recommandée](#méthode-recommandée--simulation-contrôle-application) pour contrôler et appliquer les changements.
-
-> Lance toujours le script avec `.venv/bin/python`, pas `python3` : les dépendances ne sont installées que dans `.venv`.
-
-### Récupérer les fichiers d'une machine distante
-
-Pour ouvrir `review.html` sur ton ordinateur et renvoyer `choices.json`, utilise un client SFTP avec la même adresse et les mêmes identifiants qu'en SSH :
-
-- **Windows** : [WinSCP](https://winscp.net/) ou [FileZilla](https://filezilla-project.org/)
-- **macOS** : [Cyberduck](https://cyberduck.io/) ou FileZilla
-- **Linux** : ton gestionnaire de fichiers (`sftp://ton_utilisateur@adresse_du_serveur`) ou FileZilla
-
-Ou depuis un terminal sur ton ordinateur :
-
-```bash
-scp ton_utilisateur@adresse_du_serveur:plex-smart-logo-updater/logs/<dossier>/review.html .
-scp choices.json ton_utilisateur@adresse_du_serveur:plex-smart-logo-updater/logs/<dossier>/
-```
+> Lancez toujours le script avec `.venv/bin/python`, pas `python3` : les dépendances ne sont installées que dans `.venv`.
 
 ### Mettre à jour
 
@@ -175,112 +132,119 @@ git pull
 ./install.sh --no-config
 ```
 
-`git pull` télécharge la nouvelle version depuis GitHub ; `./install.sh --no-config` met à jour les dépendances sans reposer les questions de l'assistant. Ton `config.env`, tes logs et le cache sont conservés. Voir [CHANGELOG.md](CHANGELOG.md) pour les nouveautés.
+`git pull` télécharge la nouvelle version, et `./install.sh --no-config` met à jour les dépendances sans reposer les questions de configuration. Vos réglages, logs et cache sont conservés. Les nouveautés sont dans [CHANGELOG.md](CHANGELOG.md).
 
 ### Désinstaller
 
 ```bash
 cd ~/plex-smart-logo-updater
-.venv/bin/python configure.py --cron     # choisir "never" pour retirer l'analyse automatique
+.venv/bin/python configure.py --cron       # choisissez "never" pour retirer l'analyse automatique
+.venv/bin/python configure.py --tautulli   # file Tautulli, si activée : choisissez "off"
 cd ~
 rm -rf plex-smart-logo-updater
 ```
 
-Les logos déjà posés dans Plex restent en place. Pour remettre d'abord les anciens logos, utilise [`--undo`](#annuler-une-application) sur tes dossiers d'application.
+Si vous avez installé le hook Tautulli, supprimez aussi son agent Script dans Tautulli. Les logos et affiches déjà posés dans Plex restent en place. Pour remettre les précédents, [annulez](#annuler-une-application) vos applications avant de supprimer le dossier.
 
-### Problèmes courants
+## Utilisation au quotidien
 
-| Problème | Solution |
-|---|---|
-| `Permission denied` en lançant `./install.sh` | Lance plutôt `bash install.sh`. |
-| `Python 3.8 or later is required` | Installe un Python plus récent, ou lance `PYTHON=python3.11 ./install.sh` si plusieurs versions sont installées. |
-| `No module named ...` | Lance le script avec `.venv/bin/python`, pas `python3`. |
-| `Plex token rejected` | Ton token a changé : `.venv/bin/python configure.py --token`. |
-| `Cannot connect to the Plex server` | Vérifie l'adresse et le port ; depuis la machine, `curl http://adresse:32400/identity` doit répondre. |
-| `Libraries not found` | Les noms dans `PLEX_LIBRARIES` doivent correspondre exactement à Plex : `.venv/bin/python configure.py --libraries`. |
-| L'installateur s'arrête avec `The dependencies do not load correctly` | Supprime le dossier `.venv` et relance `./install.sh` ; si ça persiste, ouvre une issue avec la sortie complète. |
+Chaque changement passe par trois étapes : une **simulation** qui génère une page de contrôle, votre **contrôle**, puis l'**application** de ce que vous avez validé.
 
-## Configuration
-
-L'assistant de configuration (étape 4 ci-dessus) écrit `config.env` à côté du script. Il couvre :
-
-1. l'adresse du serveur Plex et ton token, avec un **test de connexion** ;
-2. les bibliothèques à traiter, choisies dans la **liste de ton serveur** ;
-3. la langue des logos (par défaut, la langue de chaque bibliothèque, puis l'anglais) ;
-4. les notifications (Discord, Bark, webhook générique), avec **un message de test** ;
-5. l'**analyse automatique** dans cron : tous les jours, une fois par semaine ou jamais.
-
-Pour modifier la configuration plus tard, relance l'assistant. Les valeurs actuelles sont proposées : Entrée pour les garder.
+### 1. Simulation
 
 ```bash
-.venv/bin/python configure.py
+.venv/bin/python plex-smart-logo-updater.py --html
 ```
 
-Pour ne refaire qu'une étape :
+Chaque lancement crée un dossier dans `logs/`, nommé d'après la date et le mode (`2026-09-23_18h20m05_simulation` pour une simulation). Avec `--html`, la page de contrôle `review.html` y est générée.
 
-| Commande | Effet |
-|---|---|
-| `configure.py --token` | Change **seulement le token** : il est demandé, testé, puis enregistré |
-| `configure.py --token <nouveau token>` | Même chose sans question (mais le token reste dans l'historique du terminal) |
-| `configure.py --server` | Adresse du serveur et token |
-| `configure.py --libraries` | Choix des bibliothèques |
-| `configure.py --language` | Langue des logos |
-| `configure.py --notifications` | Webhooks |
-| `configure.py --cron` | Analyse automatique |
-| `configure.py --tautulli` | Traitement de la file du hook Tautulli |
+### 2. Contrôle
 
-Un nouveau token n'est enregistré que si la connexion à Plex réussit avec lui.
+Ouvrez `review.html` dans votre navigateur. C'est un fichier unique et autonome : les images sont intégrées, et il ne contient ni l'adresse de votre serveur ni votre token.
 
-**Si ton token change**, le script le détecte : il s'arrête avec le message « Plex token rejected: change it with: .venv/bin/python configure.py --token ». Avec `--notify`, comme lors d'une analyse automatique, ce message t'est aussi envoyé par notification.
+![Page de contrôle avec tous les changements](docs/review-all.png)
 
-`config.env` contient ton token : l'assistant le rend lisible par toi seul. Tu peux aussi l'écrire à la main à partir de `config.env.example`.
+- Chaque changement montre l'image actuelle et la nouvelle.
+- Tout est **validé** par défaut : cliquez sur **Reject** pour les changements que vous ne voulez pas.
+- Des filtres permettent de commencer par les cas douteux (« Not verified », « Original title », « Posters »…).
+- Vos choix sont gardés dans le navigateur si vous fermez la page.
+- Quand vous avez fini, cliquez sur **Export choices.json**.
 
-| Variable | Rôle | Exemple |
-|---|---|---|
-| `PLEX_URL` | Adresse **locale** du serveur Plex | `http://192.168.1.100:32400` |
-| `PLEX_TOKEN` | Ton token Plex ([comment le trouver](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)) | `xxxxxxxxxxxxxxxxxxxx` |
-| `PLEX_LIBRARIES` | Bibliothèques à traiter, séparées par des virgules | `Films,Séries TV,Animations Japonaise` |
-| `PLEX_LANGUAGES` | Langues par ordre de préférence (facultatif). `auto` : la langue de chaque bibliothèque, puis l'anglais | `auto` (par défaut), ou par exemple `fr-FR,en-US` pour toutes les bibliothèques |
-| `PLEX_POSTERS` | `yes` : remplace aussi les [affiches québécoises](#affiches-québécoises-facultatif) à chaque analyse (facultatif) | `no` (par défaut) |
-| `NOTIFY_URLS` | Webhooks pour `--notify`, séparés par des virgules (facultatif) | voir [Notifications](#notifications) |
-| `PLEX_LOGS_DIR` | Dossier des logs (facultatif) | `logs/` à côté du script (par défaut) |
-| `PLEX_OCR_CACHE` | Cache des lectures OCR (facultatif) | `.cache-ocr.json` à côté du script (par défaut) |
-| `PLEX_IGNORE_FILE` | Liste des titres ignorés (facultatif) | `ignored.json` à côté du script (par défaut) |
-| `HEALTHCHECK_URL` | Adresse « push » Uptime Kuma, appelée après chaque analyse (facultatif) | voir [Surveillance](#surveillance-avec-uptime-kuma) |
-| `PLEX_LOGS_KEEP` | Nombre de dossiers de simulation gardés ; les plus anciens sont supprimés, ceux des applications (avec `undo.json`) sont toujours gardés (facultatif) | `100` (par défaut) |
-
-Une variable d'environnement définie au lancement a priorité sur `config.env`, par exemple pour traiter une seule bibliothèque :
+Si le script tourne sur une machine distante, récupérez les fichiers avec un client SFTP (même adresse et même identifiant que pour SSH) : [WinSCP](https://winscp.net/) ou [FileZilla](https://filezilla-project.org/) sous Windows, [Cyberduck](https://cyberduck.io/) ou FileZilla sous macOS, ou votre gestionnaire de fichiers (`sftp://votre_utilisateur@adresse_du_serveur`) sous Linux. Depuis un terminal sur votre ordinateur :
 
 ```bash
-PLEX_LIBRARIES="Films" .venv/bin/python plex-smart-logo-updater.py
+scp votre_utilisateur@adresse_du_serveur:plex-smart-logo-updater/logs/<dossier>/review.html .
+scp choices.json votre_utilisateur@adresse_du_serveur:plex-smart-logo-updater/logs/<dossier>/
 ```
 
-Utilise l'adresse IP locale plutôt qu'un nom de domaine public. Un reverse proxy protégé par Fail2Ban ou CrowdSec pourrait bloquer le script à cause du nombre de requêtes.
+### 3. Application
+
+Déposez `choices.json` dans le dossier de la simulation, puis :
+
+```bash
+.venv/bin/python plex-smart-logo-updater.py --apply --choices logs/<dossier de la simulation>/choices.json
+```
+
+Seuls les changements validés sont appliqués, et ceux que vous avez refusés vont dans les [titres ignorés](#titres-ignorés). Si Plex a modifié un titre depuis la simulation, le titre n'est pas touché et reçoit le tag `[RECHECK]` : relancez une simulation.
+
+Pour tout appliquer sans passer par la page de contrôle, lancez `--apply` sans `--choices`. Ce n'est pas recommandé.
+
+### Titres ignorés
+
+Certains titres doivent rester tels quels : un changement que vous avez refusé, ou un logo retiré volontairement. Sans la liste des titres ignorés, l'analyse automatique les proposerait à nouveau et vous notifierait à chaque fois.
+
+- **Les refus sont retenus.** Quand vous appliquez avec `--choices`, chaque changement refusé rejoint les titres ignorés et n'est plus proposé. Refuser une affiche n'ignore que l'affiche : le logo du titre reste vérifié.
+- **Ajoutez un titre à la main** pour que le script n'y touche plus du tout :
+
+  ```bash
+  .venv/bin/python plex-smart-logo-updater.py --ignore "Films/Edge of Tomorrow"
+  ```
+
+  Le titre peut être donné sous la forme `Bibliothèque/Titre`, `Titre`, `Titre (année)` ou un ratingKey Plex. Si plusieurs titres correspondent, le script les liste pour que vous précisiez.
+- **Retirez un titre** avec `--unignore "Edge of Tomorrow"`, et **affichez la liste** avec `--list-ignored`.
+
+La liste est enregistrée dans `ignored.json`, à côté du script.
+
+### Annuler une application
+
+Chaque application enregistre l'état précédent dans `undo.json`, dans son dossier de logs. Pour tout remettre comme avant :
+
+```bash
+.venv/bin/python plex-smart-logo-updater.py --undo logs/<dossier de l'application>            # simulation
+.venv/bin/python plex-smart-logo-updater.py --undo logs/<dossier de l'application> --apply    # restauration
+```
+
+- Chaque logo ou affiche retrouve son image précédente, avec son verrouillage d'origine. Un titre qui n'avait pas de logo redevient sans logo.
+- Une image modifiée depuis l'application, par vous ou par Plex, n'est pas touchée.
+
+## Automatisation
+
+### Analyse automatique
+
+L'assistant peut programmer une analyse automatique avec cron (quotidienne ou hebdomadaire). Elle fait une **simulation** avec la page de contrôle et les notifications. **Rien n'est jamais appliqué automatiquement** : quand il y a quelque chose à valider, vous recevez une notification, vous contrôlez la page, puis vous appliquez avec `--choices`.
+
+La sortie va dans `logs/cron.log` (gardé sous 5 Mo). L'assistant ne gère que ses propres lignes de crontab, repérées par `# plex-smart-logo-updater`. Pour changer la fréquence : `.venv/bin/python configure.py --cron`.
 
 ### Notifications
 
-Avec `--notify`, le script envoie un résumé **seulement s'il y a quelque chose à faire** : des changements à valider, des titres à faire à la main ou des erreurs. `NOTIFY_URLS` peut contenir plusieurs webhooks. Le type est deviné d'après l'adresse, ou forcé par un préfixe :
+Avec `--notify` (inclus dans l'analyse automatique), le script envoie un résumé **uniquement quand il y a quelque chose à faire** : des changements à valider, des titres à traiter à la main, ou des erreurs. Un titre à traiter à la main n'est signalé qu'une fois. Pour les changements qui attendent encore votre validation, chaque analyse complète envoie un rappel.
+
+`NOTIFY_URLS` peut contenir plusieurs webhooks, séparés par des virgules. Le type est deviné d'après l'adresse, ou forcé avec un préfixe :
 
 | Service | Exemple dans `NOTIFY_URLS` |
 |---|---|
 | Discord | `https://discord.com/api/webhooks/…` |
-| Bark (serveur officiel) | `https://api.day.app/<ta clé>` |
-| Bark (auto-hébergé) | `bark:https://mon-serveur-bark.fr/<ta clé>` |
-| Webhook générique (POST JSON `title`, `message`, `text`) | `json:https://exemple.org/hook` |
+| Bark (serveur officiel) | `https://api.day.app/<votre clé>` |
+| Bark (auto-hébergé) | `bark:https://mon-serveur-bark.example/<votre clé>` |
+| Webhook générique (POST JSON avec `title`, `message`, `text`) | `json:https://example.org/hook` |
 
-Les adresses des webhooks ne sont jamais recopiées dans les logs.
+Les adresses des webhooks ne sont jamais écrites dans les logs. Pour les changer : `.venv/bin/python configure.py --notifications`.
 
-### Analyse automatique
+### Nouveaux titres tout de suite, avec Tautulli
 
-Si tu l'as activée dans l'assistant, cron lance régulièrement une **simulation** avec la page de contrôle et les notifications (`--html --notify --quiet`). **Rien n'est jamais appliqué automatiquement** : quand des titres sont à valider, tu reçois une notification, tu contrôles la page, puis tu lances l'application avec `--choices`. La sortie de chaque lancement automatique est ajoutée à `logs/cron.log` (limité à 5 Mo).
+Avec [Tautulli](https://tautulli.com/), les nouveaux films et séries sont vérifiés quelques minutes après leur ajout dans Plex, au lieu d'attendre la prochaine analyse automatique.
 
-L'assistant gère une seule ligne de ta crontab, marquée `# plex-smart-logo-updater`, et ne touche pas aux autres.
-
-### Traitement immédiat avec Tautulli
-
-Si tu utilises [Tautulli](https://tautulli.com/), il peut lancer le script dès que Plex ajoute un film ou une série, au lieu d'attendre l'analyse hebdomadaire. Seuls les titres ajoutés sont traités (quelques secondes), et tu reçois la notification tout de suite.
-
-Dans Tautulli : **Settings > Notification Agents > Add a new notification agent > Script**, puis :
+Dans Tautulli, allez dans **Settings > Notification Agents > Add a new notification agent > Script** :
 
 | Réglage | Valeur |
 |---|---|
@@ -289,153 +253,182 @@ Dans Tautulli : **Settings > Notification Agents > Add a new notification agent 
 | Triggers | **Recently Added** |
 | Arguments > Recently Added | `{rating_key}` |
 
-- Le hook ajoute le titre à une file d'attente (`logs/tautulli-queue.txt`). S'il peut lancer l'environnement Python du script, il traite la file tout de suite en arrière-plan (simulation, page de contrôle, `--notify` ; sortie dans `logs/tautulli.log`).
-- **Tautulli dans un conteneur** (fréquent sur les seedbox, par exemple les images linuxserver) : le conteneur accède au dossier du projet mais en général pas à son environnement Python. Active le traitement de la file avec `.venv/bin/python configure.py --tautulli` : une tâche cron traite la file toutes les 5 minutes, et ne fait rien quand elle est vide. Le Script Folder doit être le chemin **tel que le conteneur le voit** (souvent `/home/<utilisateur>/...`).
-- Un épisode ou une saison compte pour sa série, et les titres hors de `PLEX_LIBRARIES` sont ignorés.
-- Une saison importée épisode par épisode ne t'inonde pas : un changement en attente n'est notifié qu'une fois ; l'analyse hebdomadaire envoie quand même un rappel tant qu'il attend ta validation.
-- Des analyses lancées en même temps s'attendent l'une l'autre.
-- Si un logo manque juste après l'import (Plex encore en train de récupérer les métadonnées), l'analyse hebdomadaire le rattrape.
+Le hook ajoute le nouveau titre à une file d'attente. Si c'est possible, il traite ensuite la file immédiatement (simulation, page de contrôle, notification), avec la sortie dans `logs/tautulli.log`.
 
-Tu peux aussi le lancer à la main : `.venv/bin/python plex-smart-logo-updater.py --rating-key 12345 --html`, ou traiter la file avec `--process-queue`.
+**Tautulli dans un conteneur** (fréquent sur les seedbox, par exemple avec les images linuxserver) : le conteneur voit le dossier du projet mais ne peut en général pas lancer son environnement Python. Deux choses changent :
+
+- Dans Tautulli, le Script Folder est le chemin **tel que le conteneur le voit**, souvent `/home/<utilisateur>/...`.
+- Sur la machine, activez le traitement de la file avec `.venv/bin/python configure.py --tautulli`. Une tâche cron traite alors la file toutes les 5 minutes, et ne fait rien quand elle est vide.
+
+Quelques précisions :
+
+- Un épisode ou une saison compte comme sa série. Les titres hors de `PLEX_LIBRARIES` ne sont pas traités.
+- Une saison importée épisode par épisode ne vous inonde pas : chaque changement en attente n'est notifié qu'une fois. L'analyse automatique envoie quand même un rappel tant qu'un changement attend votre validation.
+- Les lancements simultanés s'attendent les uns les autres.
+- Si Plex n'a pas encore récupéré les images d'un titre au moment de la vérification, l'analyse automatique suivante le rattrape.
+
+Pour traiter des titres à la main : `--rating-key 12345`, ou `--process-queue` pour la file d'attente.
 
 ### Surveillance avec Uptime Kuma
 
-Avec `HEALTHCHECK_URL`, chaque analyse envoie un signal à un service de surveillance : **up** quand tout s'est bien passé, **down** avec la raison en cas d'échec (token Plex refusé, serveur injoignable, plantage). Si l'analyse hebdomadaire s'arrête (cron cassé, seedbox redémarrée…), l'absence de signal te prévient.
+Avec `HEALTHCHECK_URL`, chaque lancement envoie un signal à un service de surveillance. Il indique **up** quand tout s'est bien passé, et **down** avec la raison en cas d'échec (token refusé, serveur injoignable, plantage). Si l'analyse automatique s'arrête complètement (cron cassé, machine éteinte…), l'absence de signal vous prévient.
 
-Dans [Uptime Kuma](https://github.com/louislam/uptime-kuma) : **Add New Monitor > Push**, copie l'adresse « push » dans `HEALTHCHECK_URL` (ou réponds à la question de `configure.py --notifications`), et règle l'**intervalle de heartbeat** un peu au-dessus de la fréquence du cron (par exemple 8 jours = 691200 s pour une analyse hebdomadaire). Une adresse [healthchecks.io](https://healthchecks.io/) fonctionne aussi.
+Dans [Uptime Kuma](https://github.com/louislam/uptime-kuma), allez dans **Add New Monitor > Push**. Copiez l'URL de push dans `HEALTHCHECK_URL`, ou donnez-la à `configure.py --notifications`. Réglez ensuite le **heartbeat interval** un peu au-dessus de la fréquence de votre cron, par exemple 8 jours (691200 s) pour une analyse hebdomadaire. Une URL [healthchecks.io](https://healthchecks.io/) fonctionne aussi.
 
-## Utilisation
+## Référence
+
+### Assistant de configuration
+
+`configure.py` écrit `config.env`. Vous pouvez le relancer à tout moment : les valeurs actuelles sont proposées par défaut, appuyez sur Entrée pour les garder.
+
+```bash
+.venv/bin/python configure.py
+```
+
+Pour refaire une seule étape :
+
+| Commande | Effet |
+|---|---|
+| `configure.py --token` | Change **uniquement le token** : il est demandé, testé, puis enregistré |
+| `configure.py --server` | Adresse du serveur et token |
+| `configure.py --libraries` | Bibliothèques à traiter |
+| `configure.py --language` | Langue des logos et affiches québécoises |
+| `configure.py --notifications` | Webhooks et Uptime Kuma |
+| `configure.py --cron` | Analyse automatique |
+| `configure.py --tautulli` | Traitement de la file pour Tautulli dans un conteneur |
+
+Un nouveau token n'est enregistré que si Plex l'accepte. **Si votre token change**, le script s'arrête avec « Plex token rejected: change it with: .venv/bin/python configure.py --token », et envoie aussi ce message en notification quand il est lancé avec `--notify`.
+
+### Réglages (`config.env`)
+
+L'assistant écrit ce fichier et le rend lisible par vous seul, parce qu'il contient votre token. Vous pouvez aussi l'écrire à la main à partir de `config.env.example`.
+
+| Variable | Rôle | Défaut / exemple |
+|---|---|---|
+| `PLEX_URL` | Adresse **locale** du serveur Plex | `http://192.168.1.100:32400` |
+| `PLEX_TOKEN` | Votre token Plex | |
+| `PLEX_LIBRARIES` | Bibliothèques à traiter, séparées par des virgules | `Films,Séries TV,Animés` |
+| `PLEX_LANGUAGES` | Langues par ordre de préférence. `auto` : la langue de chaque bibliothèque, puis l'anglais | `auto`, ou par exemple `fr-FR,en-US` pour toutes les bibliothèques |
+| `PLEX_POSTERS` | `yes` : remplace aussi les [affiches québécoises](#affiches-québécoises) | `no` |
+| `NOTIFY_URLS` | [Webhooks](#notifications) pour `--notify`, séparés par des virgules | |
+| `HEALTHCHECK_URL` | URL de push [Uptime Kuma](#surveillance-avec-uptime-kuma) | |
+| `PLEX_LOGS_DIR` | Dossier des logs | `logs/` à côté du script |
+| `PLEX_LOGS_KEEP` | Nombre de dossiers de simulation gardés. Les dossiers d'application (avec `undo.json`) sont toujours gardés | `100` |
+| `PLEX_OCR_CACHE` | Cache de l'OCR | `.cache-ocr.json` à côté du script |
+| `PLEX_IGNORE_FILE` | Liste des titres ignorés | `ignored.json` à côté du script |
+
+Une variable donnée au lancement est prioritaire sur `config.env`. Par exemple, pour ne traiter qu'une bibliothèque :
+
+```bash
+PLEX_LIBRARIES="Films" .venv/bin/python plex-smart-logo-updater.py
+```
+
+### Options
 
 | Option | Effet |
 |---|---|
 | *(aucune)* | Simulation : rien n'est modifié |
+| `--html` | Génère la page de contrôle `review.html` |
 | `--apply` | Applique les changements |
-| `--html` | Génère la page de contrôle `review.html` (voir plus bas) |
 | `--choices FICHIER` | Avec `--apply` : n'applique que les changements validés dans la page de contrôle |
-| `--fix-locked-quebec` | Remplace aussi les logos **verrouillés** détectés comme québécois |
-| `--posters` | Remplace aussi les [affiches québécoises](#affiches-québécoises-facultatif) (comme `PLEX_POSTERS=yes`) |
-| `--notify` | Envoie un résumé aux webhooks de `NOTIFY_URLS` s'il y a quelque chose à faire |
+| `--posters` | Remplace aussi les [affiches québécoises](#affiches-québécoises) (comme `PLEX_POSTERS=yes`) |
+| `--fix-locked-quebec` | Remplace aussi les logos et affiches **verrouillés** détectés comme québécois |
+| `--notify` | Envoie une notification quand il y a quelque chose à faire |
 | `--quiet` | N'affiche que le résumé (le détail reste dans les logs) |
-| `--undo DOSSIER` | Annule une application (simulation, sauf avec `--apply`) |
-| `--rating-key CLÉ` | Ne traite que ces titres (voir [Tautulli](#traitement-immédiat-avec-tautulli)) |
-| `--process-queue` | Traite les titres mis en file par le hook Tautulli (rien si la file est vide) |
-| `--ignore TITRE` | Ne plus jamais toucher à ce titre (voir [Titres ignorés](#titres-ignorés)) |
-| `--unignore TITRE` | Retire un titre de la liste des titres ignorés |
-| `--list-ignored` | Affiche la liste des titres ignorés |
-| `--replace` | Remplace aussi les logos posés par Plex s'ils diffèrent de sa recommandation actuelle |
-| `--replace --include-locked` | Remplace aussi les logos choisis à la main (à éviter) |
+| `--rating-key CLÉ` | Ne traite que ces titres (ratingKey Plex) |
+| `--process-queue` | Traite les titres mis en file par le hook Tautulli |
+| `--ignore TITRE` / `--unignore TITRE` / `--list-ignored` | Gère les [titres ignorés](#titres-ignorés) |
+| `--undo DOSSIER` | [Annule](#annuler-une-application) une application (simulation sauf avec `--apply`) |
+| `--replace` | Remplace aussi les logos posés par Plex qui diffèrent de sa recommandation actuelle |
+| `--replace --include-locked` | Remplace aussi les logos choisis à la main (déconseillé) |
 
-`.venv/bin/python plex-smart-logo-updater.py --help` rappelle toutes les options.
+`--help` liste toutes les options.
 
-Attention avec `--replace` : sur TMDB, un logo « français » peut être la version québécoise, et l'OCR n'arrive pas toujours à le repérer. Par défaut, le script ne remplace donc que les logos détectés comme québécois.
+Attention avec `--replace` : sur TMDB, un logo « français » est parfois la version québécoise, et l'OCR ne la repère pas toujours. C'est pourquoi, par défaut, le script ne remplace que les logos détectés comme québécois.
 
-En mode `--apply`, le script fait une pause de 2 s après chaque logo et de 10 s tous les 10 logos, pour ménager le serveur. En cas d'erreur passagère (429 ou 5xx), il réessaie automatiquement jusqu'à 4 fois.
+Pendant une application, le script attend 2 s après chaque changement et 10 s tous les 10 changements, pour ménager le serveur. Les erreurs temporaires (429, 5xx) sont réessayées jusqu'à 4 fois.
 
-### Méthode recommandée : simulation, contrôle, application
+## Comment ça marche
 
-**1. Simulation avec page de contrôle :**
+### Choix du logo
 
-```bash
-.venv/bin/python plex-smart-logo-updater.py --html
-```
+Pour chaque titre **sans logo**, le script demande au service de métadonnées de Plex (`metadata.provider.plex.tv`, avec votre token) le logo qu'il recommande : d'abord dans la langue de la bibliothèque, puis en anglais. Il cherche ce logo parmi ceux que propose votre serveur (même adresse, ou image identique) et le sélectionne. Il ne le télécharge depuis Internet que si votre serveur ne l'a pas.
 
-Le script crée `review.html` dans le dossier de logs de la simulation.
+Un titre qui a déjà un logo le garde, sauf si ce logo est québécois. Un champ verrouillé *sans* logo reçoit une proposition comme n'importe quel titre sans logo. Pour le laisser vide, refusez la proposition : le titre rejoint alors les titres ignorés.
 
-![Page de contrôle avec tous les changements](docs/review-all.png)
+### Détection des logos québécois
 
-**2. Contrôle sur ton PC :** télécharge `review.html` (SFTP, gestionnaire de fichiers web…) et ouvre-le dans ton navigateur. C'est un fichier autonome : les images sont incluses, il ne contient ni lien vers ton serveur ni token.
+Cette détection ne concerne que les bibliothèques françaises. Quand les titres français (fr-FR) et québécois (fr-CA) donnés par Plex diffèrent, le script **lit le texte du logo** (OCR) et le compare aux titres français, québécois et original.
 
-- Chaque changement s'affiche avec l'ancien et le nouveau logo.
-- Tout est **validé** par défaut : clique sur **Reject** pour ceux que tu ne veux pas.
-- Les filtres permettent de commencer par les cas douteux (« Not verified », « Original title »…).
-- Tes choix sont gardés dans le navigateur si tu fermes la page.
-- Clique sur **Export choices.json**.
+- **Un logo québécois posé par Plex est remplacé** par le meilleur logo non québécois : le plus proche du titre français complet, sinon du titre original. À ressemblance égale, il préfère, dans l'ordre : un logo sans texte en plus (noms d'acteurs, slogans ; « Marvel Studios », « Disney »… sont acceptés), un logo du même style que celui remplacé (coloré ou blanc), celui que Plex recommande, puis le plus grand.
+- **Un logo québécois n'est jamais ajouté.** Si Plex en recommande un, le script en cherche un autre.
+- Quand le titre français diffère du titre original et que le choix de Plex n'est pas clairement français, le script cherche un logo au titre français (ex. « HAPPY BIRTHDEAD » plutôt que « HAPPY DEATH DAY »). Quand la France garde le titre original, le choix de Plex est conservé.
+- Quand le Québec garde le titre original (*Black Box Diaries*), un logo portant ce titre n'est **pas** considéré comme québécois.
+- S'il n'existe **que** des logos québécois, le titre reçoit le tag `[CHECK]` : choisissez-en un à la main.
+- Un logo québécois **verrouillé** est signalé, et n'est remplacé qu'avec `--fix-locked-quebec`.
 
-**3. Application :** copie `choices.json` sur la seedbox, dans le dossier de la simulation, puis :
+La détection est volontairement prudente : un logo existant n'est remplacé que s'il est clairement lu comme québécois. Trois **mentions spéciales** signalent les logos posés avec moins de certitude, et la page de contrôle a un filtre pour chacune :
 
-```bash
-.venv/bin/python plex-smart-logo-updater.py --apply --choices logs/<dossier de la simulation>/choices.json
-```
+| Mention | Signification |
+|---|---|
+| `[FRENCH INFERRED]` (français déduit) | Le titre français est lu sur le logo, et les mots propres au titre québécois en sont absents (ex. « PUSH », alors que le Québec dit « Push : La division »). Très probablement correct. |
+| `[ORIGINAL TITLE]` (titre original) | Le logo porte le titre original, ni français ni québécois (ex. « HAPPY DEATH DAY » pour *Happy Birthdead*). |
+| `[NOT VERIFIED]` (non vérifié) | L'OCR n'a pas pu lire le logo (police très stylisée, lettres espacées…). Il est posé quand même, comme Plex l'aurait fait : **à contrôler**. |
 
-Seuls les changements validés sont appliqués. Un titre refusé est marqué `[REJECTED]` et ajouté aux [titres ignorés](#titres-ignorés). Si le logo prévu a changé depuis la simulation, le titre est marqué `[RECHECK]` et n'est pas modifié.
+Les lectures OCR sont gardées en cache (`.cache-ocr.json`) : une nouvelle analyse ne lit que les nouvelles images.
 
-### Titres ignorés
+### Affiches québécoises
 
-Certains titres doivent rester tels quels : un changement que tu as refusé dans la page de contrôle, ou un logo que tu as retiré volontairement. Sans liste de titres ignorés, l'analyse hebdomadaire les reproposerait et te notifierait à chaque fois.
+Cette vérification est facultative : activez-la avec `--posters`, ou `PLEX_POSTERS=yes` (l'assistant pose la question). Elle fonctionne comme la détection des logos, dans les bibliothèques françaises, pour les titres dont le titre québécois diffère :
 
-- **Les refus sont retenus** : quand tu appliques avec `--choices`, chaque titre refusé est ajouté à la liste et n'est plus proposé.
-- **Ajouter un titre à la main** :
-
-  ```bash
-  .venv/bin/python plex-smart-logo-updater.py --ignore "Films/Edge of Tomorrow"
-  ```
-
-  Le titre peut s'écrire `Bibliothèque/Titre`, `Titre`, `Titre (année)` ou avec son ratingKey Plex. Si plusieurs titres correspondent, le script les liste pour que tu précises.
-- **Retirer un titre** avec `--unignore "Edge of Tomorrow"`, et afficher la liste avec `--list-ignored`.
-
-Les titres ignorés apparaissent dans les logs avec l'étiquette `[IGNORED]`. La liste est dans `ignored.json`, à côté du script (non publié).
-
-### Annuler une application
-
-Chaque application enregistre l'état d'avant dans `undo.json`, dans son dossier de logs. Pour tout remettre comme avant :
-
-```bash
-.venv/bin/python plex-smart-logo-updater.py --undo logs/<dossier de l'application>            # simulation
-.venv/bin/python plex-smart-logo-updater.py --undo logs/<dossier de l'application> --apply    # restauration
-```
-
-- Un titre qui n'avait pas de logo le perd à nouveau (et retrouve son verrou si le champ était verrouillé).
-- Un titre qui avait un logo retrouve l'ancien, avec son verrou d'origine.
-- Un logo modifié depuis l'application (par toi ou par Plex) n'est pas touché.
+- L'affiche actuelle est lue. Si c'est une **affiche québécoise**, le script en cherche une au titre français, sinon au titre original, parmi les 30 premières affiches proposées par Plex. À ressemblance égale, le script préfère celle que Plex recommande, puis la première dans l'ordre de Plex.
+- **Les autres affiches ne sont jamais touchées.** Une affiche sans texte, ou dont le titre est illisible, n'est jamais choisie, faute de pouvoir la vérifier.
+- Si aucune affiche ne convient, le titre est signalé pour que vous le traitiez à la main. Une affiche québécoise **verrouillée** est signalée, et n'est remplacée qu'avec `--fix-locked-quebec`.
+- Les affiches passent par la même page de contrôle que les logos (avec un filtre « Posters »), et utilisent les mêmes notifications, la même liste de titres ignorés et la même annulation.
 
 ## Logs
 
-Chaque lancement crée un dossier dans `logs/`, nommé avec la date, l'heure et le mode :
+Chaque lancement crée un dossier dans `logs/`, nommé d'après la date, l'heure et le mode : `simulation`, ou `application` pour un lancement avec `--apply`.
 
 ```
 logs/
 └── 2026-09-23_18h20m05_simulation/
-    ├── _summary.txt       ← tableau par bibliothèque + totaux
-    ├── Films.txt          ← détail titre par titre + résumé
+    ├── _summary.txt       ← tableau par bibliothèque et totaux
+    ├── Films.txt          ← détail titre par titre, puis un résumé
     ├── Séries TV.txt
     ├── review.html        ← avec --html
-    └── undo.json          ← en mode --apply
+    └── undo.json          ← avec --apply
 ```
 
-Chaque fichier commence par un en-tête : date, mode, règle appliquée et légende. Il se termine par un résumé : durée, décompte et liste des titres concernés.
+Chaque fichier commence par un en-tête (date, mode, règles, légende) et se termine par un résumé (durée, compteurs et titres concernés). Dans le détail, chaque titre se termine par un tag :
 
-Dans le détail, chaque titre se termine par une étiquette :
-
-| Étiquette | Signification |
+| Tag | Signification |
 |---|---|
-| `[TO ADD]` / `[ADDED]` | Aucun logo actuellement, un logo va être / a été posé |
-| `[TO REPLACE]` / `[REPLACED]` | Le logo actuel va être / a été remplacé (logo québécois, ou avec `--replace`) |
-| `[OK]` | Déjà le bon logo, rien à faire (uniquement avec `--replace`) |
-| `[KEPT]` | Un logo est déjà en place : ignoré |
-| `[LOCKED]` | Logo choisi à la main (champ verrouillé avec un logo) : ignoré |
-| `[NONE]` | Plex ne recommande aucun logo dans les langues demandées : ignoré |
-| `[CHECK]` | Seul un logo québécois est disponible : à faire à la main |
+| `[TO ADD]` / `[ADDED]` | Pas encore de logo : un logo sera / a été posé |
+| `[TO REPLACE]` / `[REPLACED]` | L'image actuelle (logo ou affiche) sera / a été remplacée (québécoise, ou `--replace`) |
+| `[OK]` | Déjà le bon logo (seulement avec `--replace`) |
+| `[KEPT]` | Un logo est déjà posé : laissé tel quel |
+| `[LOCKED]` | Image choisie à la main (champ verrouillé) : laissée telle quelle |
+| `[NONE]` | Plex ne recommande aucun logo, dans aucune langue : à choisir à la main |
+| `[CHECK]` | Image québécoise, sans remplacement satisfaisant : à faire à la main |
 | `[REJECTED]` | Avec `--choices` : refusé dans la page de contrôle |
-| `[RECHECK]` | Avec `--choices` : le logo prévu a changé depuis la simulation |
-| `[NOT REVIEWED]` | Avec `--choices` : titre absent du fichier de choix (nouveau depuis la simulation) |
-| `[IGNORED]` | Dans la liste des titres ignorés : ignoré |
-| `[ERROR]` | Erreur (le message est indiqué) |
+| `[RECHECK]` | Avec `--choices` : l'image prévue a changé depuis la simulation |
+| `[NOT REVIEWED]` | Avec `--choices` : absent du fichier de choix (nouveau depuis la simulation) |
+| `[IGNORED]` | Dans les titres ignorés |
+| `[ERROR]` | Erreur (le message suit) |
 
-Mentions possibles après l'étiquette : `[FRENCH INFERRED]`, `[ORIGINAL TITLE]` et `[NOT VERIFIED]` (voir plus haut).
-
-Exemple :
+Un titre sans logo, complété avec la recommandation anglaise :
 
 ```
 [1/3] BNA (2020)
   Current logo     : none
   Plex search      : French: none | English: found
   Recommended logo : English, 618x239 px
-  Image link       : https://metadata-static.plex.tv/...png
   Found on Plex    : candidate #3 of 7 (tmdb), same URL
   ==> [TO ADD] English logo 618x239 px
 ```
 
-Exemple de logo québécois remplacé :
+Un logo québécois remplacé :
 
 ```
 [52/303] Bullet Train (2022)
@@ -448,28 +441,39 @@ Exemple de logo québécois remplacé :
   ==> [TO REPLACE] logo "BULLET TRAIT" (French), instead of #8 (Quebec)
 ```
 
-L'OCR ne lit pas toujours parfaitement (ici « TRAIT » au lieu de « TRAIN »), mais la comparaison tolère ces petites erreurs.
+L'OCR ne lit pas toujours parfaitement (« TRAIT » au lieu de « TRAIN »), mais la comparaison tolère ces petites erreurs.
 
-La première simulation est plus longue sur les bibliothèques de films (environ 7 minutes pour 300 films), à cause de la lecture des logos. Les suivantes profitent du cache.
+## Problèmes courants
+
+| Problème | Solution |
+|---|---|
+| `Permission denied` en lançant `./install.sh` | Lancez `bash install.sh` à la place. |
+| `Python 3.8 or later is required` | Installez un Python plus récent, ou lancez `PYTHON=python3.11 ./install.sh` si plusieurs versions sont installées. |
+| `No module named ...` | Lancez le script avec `.venv/bin/python`, pas `python3`. |
+| L'installateur s'arrête avec `The dependencies do not load correctly` | Supprimez le dossier `.venv` et relancez `./install.sh`. Si le problème persiste, ouvrez une issue avec la sortie complète. |
+| `Plex token rejected` | Votre token a changé : `.venv/bin/python configure.py --token`. |
+| `Cannot connect to the Plex server` | Vérifiez l'adresse et le port. Depuis la machine, `curl http://adresse:32400/identity` doit répondre. |
+| `Libraries not found` | Les noms doivent correspondre exactement à Plex : `.venv/bin/python configure.py --libraries`. |
+| Un nouveau titre n'est pas traité par le hook Tautulli | Vérifiez que sa bibliothèque est dans `PLEX_LIBRARIES`, et lisez `logs/tautulli.log`. Avec Tautulli dans un conteneur, lancez `configure.py --tautulli`. |
 
 ## Bon à savoir
 
-- Un logo sélectionné par le script devient **verrouillé**, comme un choix manuel. Plex ne le remplacera donc plus lors des actualisations, et le script l'ignorera lors des lancements suivants.
-- Rien n'est supprimé : l'ancien logo reste disponible dans Plex (*Modifier > Logo*).
-- Seul le logo principal du film ou de la série est traité, pas ceux des saisons ou des épisodes.
-- Pour les titres marqués `[NONE]` ou `[CHECK]`, il faut choisir un logo à la main dans Plex ou en importer un.
-- `config.env`, `ignored.json`, les dossiers `logs/`, `.venv/` et le cache `.cache-ocr.json` ne sont pas à publier (voir `.gitignore`) : ils contiennent ton token ou la liste de tes titres.
+- Une image choisie par le script devient **verrouillée**, comme un choix manuel : Plex ne la remplace pas lors d'une actualisation, et les analyses suivantes n'y touchent plus.
+- Rien n'est supprimé : l'ancien logo ou l'ancienne affiche reste disponible dans Plex (*Modifier > Logo* ou *Affiche*).
+- Seules les images principales des films et séries sont traitées, pas celles des saisons ou des épisodes.
+- L'installateur remplace OpenCV 5, installé avec le moteur OCR, par une version plus ancienne, parce qu'OpenCV 5 plante au chargement sur certaines machines.
+- `config.env`, `ignored.json`, `logs/`, `.venv/` et `.cache-ocr.json` ne doivent pas être publiés (ils sont dans `.gitignore`) : ils contiennent votre token ou la liste de vos titres.
 
 ## Tests
 
-La détection des logos québécois et les notifications sont couvertes par des tests construits à partir de cas réels (Edge of Tomorrow, Bullet Train, Captain America, Avatar…). Ils ne nécessitent ni serveur Plex ni moteur OCR :
+Les tests sont construits à partir de cas réels (*Edge of Tomorrow*, *Bullet Train*, *The Banker*, *Captain America*, *Avatar*…). Ils couvrent la détection québécoise, les affiches, les notifications, les titres ignorés et l'assistant, et fonctionnent sans serveur Plex ni moteur OCR :
 
 ```bash
 .venv/bin/pip install pytest
 .venv/bin/python -m pytest tests
 ```
 
-GitHub Actions les lance à chaque envoi de code (Python 3.8 et 3.12).
+GitHub Actions les lance à chaque push (Python 3.8 et 3.12).
 
 ## Crédits
 
