@@ -133,6 +133,15 @@ def test_titles_to_handle_by_hand_are_only_reported_once(main, tmp_path):
     assert main.new_manual_titles(["Films > A", "Films > B", "Films > C"], state) == ["Films > B"]
 
 
+def test_targeted_run_does_not_forget_reported_titles(main, tmp_path):
+    """Regression: a Tautulli run (one title) wiped the state, so the next weekly run reported everything again."""
+    state = str(tmp_path / "state.json")
+    assert main.new_manual_titles(["Films > Happy Birthdead"], state) == ["Films > Happy Birthdead"]
+    assert main.new_manual_titles([], state, targeted=True) == []                    # Tautulli: One Piece, nothing
+    assert main.new_manual_titles(["Films > X"], state, targeted=True) == ["Films > X"]
+    assert main.new_manual_titles(["Films > Happy Birthdead", "Films > X"], state) == []  # next weekly run: quiet
+
+
 def test_retries_skip_non_idempotent_methods(main):
     retry = main.HTTP.get_adapter("https://example.org").max_retries
     assert "POST" not in retry.allowed_methods

@@ -61,7 +61,7 @@ import notify as notifier
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-__version__ = "1.5.0"
+__version__ = "1.5.1"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -1423,11 +1423,13 @@ def stop(opts, summary, error):
     ping_healthcheck(False, message)
 
 
-def new_manual_titles(manual, state_path):
+def new_manual_titles(manual, state_path, targeted=False):
     """
-    Titles to handle by hand ([CHECK], locked Quebec logos) that were not already
-    reported by a previous notification. The state file is updated with the
-    current list, so a title that is fixed and comes back is reported again.
+    Titles to handle by hand ([CHECK], locked Quebec logos or posters) that were
+    not already reported by a previous notification. A full run replaces the
+    state with the current list, so a title that is fixed and comes back is
+    reported again; a targeted run (--rating-key, e.g. from Tautulli) only sees
+    a few titles, so it adds to the state without forgetting the others.
     """
     try:
         with open(state_path, encoding="utf-8") as f:
@@ -1436,7 +1438,7 @@ def new_manual_titles(manual, state_path):
         already = set()
     try:
         with open(state_path, "w", encoding="utf-8") as f:
-            json.dump(sorted(manual), f, ensure_ascii=False, indent=1)
+            json.dump(sorted(already | set(manual) if targeted else set(manual)), f, ensure_ascii=False, indent=1)
     except OSError:
         pass
     return [t for t in manual if t not in already]
@@ -1472,7 +1474,8 @@ def notify(opts, run_dir, totals, page, duration, pending=None):
     """
     to_do = changes(totals)
     manual = totals["check"] + totals["locked_qc"] + totals["poster_check"] + totals["poster_locked_qc"]
-    new_manual = new_manual_titles(manual, os.path.join(LOGS_DIR, ".notified-manual.json"))
+    new_manual = new_manual_titles(manual, os.path.join(LOGS_DIR, ".notified-manual.json"),
+                                   targeted=bool(opts.rating_keys))
     if not opts.apply:
         new_pending = new_pending_changes(pending or {}, os.path.join(LOGS_DIR, ".notified-pending.json"),
                                           targeted=bool(opts.rating_keys))

@@ -3,6 +3,11 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.5.1] - 2026-09-28
+
+### Fixed
+- A targeted run (Tautulli hook, `--rating-key`) replaced the list of titles already reported as "to handle by hand", so the next full run notified them again. Targeted runs now add to that list.
+
 ## [1.5.0] - 2026-09-25
 
 ### Added
@@ -80,6 +85,7 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.5.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.5.1
 [1.5.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.5.0
 [1.4.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.4.0
 [1.3.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.3.1
