@@ -107,7 +107,8 @@ LOGS_DIR = os.environ.get("PLEX_LOGS_DIR", os.path.join(HERE, "logs"))
 OCR_CACHE_PATH = os.environ.get("PLEX_OCR_CACHE", os.path.join(HERE, ".cache-ocr.json"))
 IGNORE_PATH = os.environ.get("PLEX_IGNORE_FILE", os.path.join(HERE, "ignored.json"))
 # Titles queued by tautulli-hook.sh, processed by --process-queue
-QUEUE_PATH = os.path.join(LOGS_DIR, "tautulli-queue.txt")
+# Always next to the script: tautulli-hook.sh cannot read PLEX_LOGS_DIR (it may run in a container)
+QUEUE_PATH = os.path.join(HERE, "logs", "tautulli-queue.txt")
 LOGS_KEEP = int(os.environ.get("PLEX_LOGS_KEEP", "100"))
 CRON_LOG_MAX_BYTES = 5 * 1024 * 1024
 # Uptime Kuma push URL (or healthchecks.io-style URL) pinged after every run

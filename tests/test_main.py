@@ -575,3 +575,10 @@ def test_a_failed_failure_alert_is_sent_again(main, tmp_path):
     state = str(tmp_path / "failure.json")
     assert main.failure_is_new("down", state, save=False) is True
     assert main.failure_is_new("down", state) is True  # nothing was saved by the unsent attempt
+
+
+def test_queue_is_where_the_tautulli_hook_writes_it(main):
+    """Regression: with PLEX_LOGS_DIR set, the hook wrote logs/tautulli-queue.txt and --process-queue read elsewhere."""
+    hook = open(os.path.join(ROOT, "tautulli-hook.sh"), encoding="utf-8").read()
+    assert "logs/tautulli-queue.txt" in hook
+    assert main.QUEUE_PATH == os.path.join(ROOT, "logs", "tautulli-queue.txt")
