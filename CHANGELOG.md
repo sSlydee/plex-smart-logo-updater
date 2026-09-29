@@ -3,6 +3,15 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.6.4] - 2026-09-29
+
+### Fixed
+- Review server: an odd session cookie or page token (non-ASCII, "²") no longer crashes the request.
+- A failed application (Plex down, token rejected…) can be applied again from the page ("Apply again").
+- The home page no longer fails when an old dry run is pruned while it loads.
+- The end of an application is recorded only by the thread waiting for it (no guessed exit code, no shared temporary file).
+- Signing out is a POST with the page token: a link or image on another site can no longer sign you out. Revocations are saved even on a fresh install.
+
 ## [1.6.3] - 2026-09-29
 
 ### Fixed
@@ -120,6 +129,7 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.6.4]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.4
 [1.6.3]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.3
 [1.6.2]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.2
 [1.6.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.1

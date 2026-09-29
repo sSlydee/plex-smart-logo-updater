@@ -74,7 +74,10 @@ try:
         _REVOKED = {k: int(v) for k, v in json.load(_f).items()}
 except (OSError, ValueError, AttributeError):
     _REVOKED = {}
+_REVOKED_LOCK = threading.Lock()
 _RUN_INFO = {}  # folder -> ((file, mtime), info)
+_STATE_LOCK = threading.Lock()  # applied.json writes (status() and the thread waiting for the application)
+_PROCS = {}  # folder -> application started by this server process
 
 
 def new_session():
@@ -82,11 +85,17 @@ def new_session():
     return expiry + "." + hmac.new(SESSION_KEY, expiry.encode(), hashlib.sha256).hexdigest()
 
 
+def same_secret(given, expected):
+    """Constant-time comparison that never raises: any header value (non-ASCII included) is accepted."""
+    return hmac.compare_digest((given or "").encode("utf-8", "surrogateescape"), expected.encode())
+
+
 def valid_session(value):
     expiry, _, sig = (value or "").partition(".")
-    if not expiry.isdigit() or int(expiry) < time.time() or sig in _REVOKED:
+    # isascii(): str.isdigit() also accepts "²" or Arabic-Indic digits, which int() rejects
+    if not (expiry.isascii() and expiry.isdigit()) or int(expiry) < time.time() or sig in _REVOKED:
         return False
-    return hmac.compare_digest(sig, hmac.new(SESSION_KEY, expiry.encode(), hashlib.sha256).hexdigest())
+    return same_secret(sig, hmac.new(SESSION_KEY, expiry.encode(), hashlib.sha256).hexdigest())
 
 
 def revoke_session(value):
@@ -94,14 +103,16 @@ def revoke_session(value):
     if not valid_session(value):
         return
     expiry, _, sig = value.partition(".")
-    now = time.time()
-    for key in [k for k, v in _REVOKED.items() if v < now]:
-        del _REVOKED[key]
-    _REVOKED[sig] = int(expiry)
-    try:
-        runstate.write(LOGS_DIR, os.path.basename(REVOKED_PATH), _REVOKED)
-    except OSError:
-        pass
+    with _REVOKED_LOCK:
+        now = time.time()
+        for key in [k for k, v in _REVOKED.items() if v < now]:
+            del _REVOKED[key]
+        _REVOKED[sig] = int(expiry)
+        try:
+            os.makedirs(LOGS_DIR, exist_ok=True)
+            runstate.write(LOGS_DIR, os.path.basename(REVOKED_PATH), dict(_REVOKED))
+        except OSError as e:
+            sys.stderr.write(f"Cannot save the signed-out session ({e}): it stays valid after a restart\n")
 
 
 def too_many_failures(address):
@@ -180,10 +191,6 @@ def run_info(folder):
     return info
 
 
-def is_full_run(folder):
-    """A full dry run (whole libraries), as opposed to a targeted one (Tautulli, --rating-key)."""
-    return not run_info(folder)["targeted"]
-
 
 def outdated(folder):
     """
@@ -219,11 +226,15 @@ def status(folder):
     if state is None:
         return {"state": "none", "outdated": outdated(folder)}
     output = tail(os.path.join(folder, OUTPUT_FILE))
-    if state.get("exit") is None and not _alive(state.get("pid")):
-        # The server restarted while the application was running, so its exit code was not
-        # recorded: a run that went to the end prints its totals
-        state.update(exit=0 if "TOTAL (" in output else -1, finished=state.get("started"))
-        write_state(folder, state)
+    # An application started by this server process is recorded by its waiting thread;
+    # only one started before a restart has its end guessed here
+    if state.get("exit") is None and folder not in _PROCS and not _alive(state.get("pid")):
+        with _STATE_LOCK:
+            state = read_state(folder) or state
+            if state.get("exit") is None:
+                # Its exit code was not recorded: a run that went to the end prints its totals
+                state.update(exit=0 if "TOTAL (" in output else -1, finished=state.get("started"))
+                write_state(folder, state)
     return {"state": "running" if state.get("exit") is None else "done", "exit": state.get("exit"),
             "started": state.get("started"), "finished": state.get("finished"), "output": output}
 
@@ -249,8 +260,12 @@ def _alive(pid):
 def start_apply(folder, choices):
     """Writes choices.json and starts the application in the background. Returns an error or None."""
     with _LOCK:
-        if read_state(folder) is not None:
-            return "this dry run was already applied (or is being applied)"
+        current = status(folder)
+        if current["state"] == "running":
+            return "this dry run is being applied"
+        if current["state"] == "done" and current["exit"] == 0:
+            return "this dry run was already applied"
+        # A failed application (Plex down, token rejected…) can be retried
         if outdated(folder):
             return "a newer dry run exists: open it from the list and apply that one"
         path = os.path.join(folder, "choices.json")
@@ -266,12 +281,16 @@ def start_apply(folder, choices):
         finally:
             out.close()
         state = {"started": time.strftime("%Y-%m-%d %H:%M"), "pid": proc.pid, "exit": None, "finished": None}
-        write_state(folder, state)
+        _PROCS[folder] = proc
+        with _STATE_LOCK:
+            write_state(folder, state)
 
     def wait():
         code = proc.wait()
         state.update(exit=code, finished=time.strftime("%Y-%m-%d %H:%M"))
-        write_state(folder, state)
+        with _STATE_LOCK:
+            write_state(folder, state)
+        _PROCS.pop(folder, None)
 
     threading.Thread(target=wait, daemon=True).start()
     return None
@@ -357,8 +376,10 @@ a { color: inherit; text-decoration: none; }
 .row .when { font-weight: 600; min-width: 150px; }
 .row .what { flex: 1; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .pills { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
-.logout { float: right; font-size: 13px; color: var(--muted); margin-top: 6px; }
-.logout:hover { color: var(--accent); }
+.logout { float: right; margin-top: 6px; }
+.logout button { background: none; border: 0; padding: 0; cursor: pointer; font: inherit; font-size: 13px;
+  color: var(--muted); }
+.logout button:hover { color: var(--accent); }
 @media (max-width: 560px) { .row { flex-wrap: wrap; } .row .when { min-width: 0; } .row .what { flex-basis: 100%; order: 3; } }
 """
 
@@ -368,10 +389,13 @@ def index_page():
     todo_cards, rows = [], []
     for name in names:
         folder = os.path.join(LOGS_DIR, name)
-        info = summary(folder)
-        st = status(folder)
+        try:
+            info = summary(folder)
+            st = status(folder)
+        except OSError:
+            continue  # deleted meanwhile (old dry runs are pruned at the start of every run)
         esc = html.escape
-        kind = "Full scan" if is_full_run(folder) else "New title (Tautulli)"
+        kind = "New title (Tautulli)" if run_info(folder)["targeted"] else "Full scan"
         where = " · ".join(info["libraries"][:3]) + (" …" if len(info["libraries"]) > 3 else "")
         pills = []
         if st["state"] == "running":
@@ -413,7 +437,8 @@ def index_page():
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plex logo review</title>
 <style>{html_report.THEME_CSS}{INDEX_CSS}</style></head>
-<body><header><a class="logout" href="logout">Sign out</a><h1>Plex logo review</h1>
+<body><header><form class="logout" method="post" action="logout"><input type="hidden" name="token" value="{TOKEN}">
+<button type="submit">Sign out</button></form><h1>Plex logo review</h1>
 <div class="sub">Latest dry runs · open one to approve its changes and apply them</div></header>
 <main><h2 class="sec">To review</h2>{to_review}{history}</main></body></html>"""
 
@@ -543,8 +568,7 @@ class Handler(BaseHTTPRequestHandler):
             message = "You are signed out." if "out" in query else ""
             return self.send(200, login_page(next_path if NEXT_PATH.match(next_path) else "", message, error=False))
         if path == "/logout":
-            revoke_session(self.cookie(COOKIE))
-            return self.send(303, "", headers=[("Location", "login?out=1"), self.session_cookie("", 0)])
+            return self.send(303, "", headers=[("Location", "./")])  # signing out is a POST (sign-out button)
         if not self.check(path):
             return
         if path in ("/", ""):
@@ -572,13 +596,15 @@ class Handler(BaseHTTPRequestHandler):
         path = self.path.split("?", 1)[0]
         if path == "/login":
             return self.sign_in()
+        if path == "/logout":
+            return self.sign_out()
         if not self.check(path):
             return
         match = ROUTE.match(path)
         folder = run_dir(match.group(1)) if match and match.group(2) == "apply" else None
         if folder is None:
             return self.send_json(404, {"error": "not found"})
-        if not hmac.compare_digest(self.headers.get("X-Review-Token", ""), TOKEN):
+        if not same_secret(self.headers.get("X-Review-Token"), TOKEN):
             return self.send_json(403, {"error": "the page is out of date: reload it, then apply again"})
         length = self.content_length()
         if length is None or not 0 < length <= MAX_BODY:
@@ -595,6 +621,15 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(409, {"error": error})
         self.send_json(200, {"state": "running"})
 
+
+    def sign_out(self):
+        length = self.content_length()
+        form = parse_qs(self.rfile.read(length).decode("utf-8", "replace")) if length and length <= 10000 else {}
+        if not same_secret(form.get("token", [""])[0], TOKEN):
+            # A page from before a restart (or a cross-site request): back to a fresh home page
+            return self.send(303, "", headers=[("Location", "./")])
+        revoke_session(self.cookie(COOKIE))
+        self.send(303, "", headers=[("Location", "login?out=1"), self.session_cookie("", 0)])
 
     def sign_in(self):
         length = self.content_length()

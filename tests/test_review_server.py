@@ -115,10 +115,24 @@ def test_too_many_failed_sign_ins(server, monkeypatch):
     assert status == 429 and "Too many" in body
 
 
+def sign_out(base, rs, cookie, token=None):
+    form = urllib.parse.urlencode({"token": rs.TOKEN if token is None else token}).encode()
+    return raw(base + "/logout", data=form, headers={"Cookie": cookie})
+
+
 def test_sign_out(server):
-    _, base, _ = server
-    status, headers, _ = raw(base + "/logout")
+    rs, base, _ = server
+    cookie = sign_in(base)[1]["Set-Cookie"].split(";")[0]
+    status, headers, _ = sign_out(base, rs, cookie)
     assert status == 303 and "Max-Age=0" in headers["Set-Cookie"]
+
+
+def test_sign_out_needs_a_post_with_the_token(server):
+    rs, base, _ = server
+    cookie = sign_in(base)[1]["Set-Cookie"].split(";")[0]
+    raw(base + "/logout", headers={"Cookie": cookie})     # GET (e.g. an <img> on another site)
+    sign_out(base, rs, cookie, token="forged")              # cross-site POST without the page token
+    assert raw(base + "/", headers={"Cookie": cookie})[0] == 200
 
 
 def test_changing_the_password_signs_everyone_out(server, monkeypatch):
@@ -275,10 +289,10 @@ def test_invalid_content_length_is_refused(server, length):
 
 
 def test_sign_out_revokes_the_session(server):
-    _, base, _ = server
+    rs, base, _ = server
     cookie = sign_in(base)[1]["Set-Cookie"].split(";")[0]
     assert raw(base + "/", headers={"Cookie": cookie})[0] == 200
-    raw(base + "/logout", headers={"Cookie": cookie})
+    sign_out(base, rs, cookie)
     assert raw(base + "/", headers={"Cookie": cookie})[0] == 303
 
 
@@ -293,3 +307,31 @@ def test_application_that_cannot_start_reports_an_error(server, monkeypatch):
 def test_reused_pid_is_not_an_application(server):
     rs, _, _ = server
     assert rs._alive(os.getpid()) is False  # this test process: alive, but not the application
+
+
+@pytest.mark.parametrize("cookie", ["plexlogo_session=\u00b2.x", "plexlogo_session=1.\u00e9"])
+def test_odd_cookies_do_not_crash(server, cookie):
+    _, base, _ = server
+    import http.client
+    host, port = base.split("//")[1].split(":")
+    conn = http.client.HTTPConnection(host, int(port), timeout=5)
+    conn.putrequest("GET", "/")
+    conn.putheader("Cookie", cookie.encode("latin-1"))
+    conn.endheaders()
+    assert conn.getresponse().status == 303  # sign-in page, not a dropped connection
+
+
+def test_failed_application_can_be_retried(server):
+    rs, base, logs = server
+    (logs / RUN / "applied.json").write_text(json.dumps({"started": "x", "pid": None, "exit": 1, "finished": "x"}))
+    assert apply(base, rs)[0] == 200
+    (logs / RUN / "applied.json").write_text(json.dumps({"started": "x", "pid": None, "exit": 0, "finished": "x"}))
+    assert apply(base, rs)[0] == 409
+
+
+def test_home_page_survives_a_pruned_folder(server, monkeypatch):
+    rs, base, _ = server
+    real = rs.summary
+    monkeypatch.setattr(rs, "summary", lambda f: (_ for _ in ()).throw(FileNotFoundError(f)))
+    assert request(base + "/")[0] == 200
+    monkeypatch.setattr(rs, "summary", real)

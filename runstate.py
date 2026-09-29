@@ -10,6 +10,7 @@ State files kept in a run's logs folder, shared by plex-smart-logo-updater.py
 import json
 import os
 import re
+import threading
 import time
 
 RUN_FILE = "run.json"
@@ -35,7 +36,8 @@ def read(folder, name):
 
 
 def write(folder, name, data):
-    tmp = os.path.join(folder, name + ".tmp")
+    # A temporary file per process and thread: concurrent writers never share it
+    tmp = os.path.join(folder, f"{name}.{os.getpid()}.{threading.get_ident()}.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
     os.replace(tmp, os.path.join(folder, name))

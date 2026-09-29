@@ -339,8 +339,10 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
       : s.exit === 0 ? "<b>Applied</b> on " + esc(s.finished) + ". Nothing more to do: this dry run is done."
       : "<b>The application failed</b> (exit code " + esc(s.exit) + "): see the output below.";
     statusBox.innerHTML = head + (s.output ? "<pre>" + esc(s.output) + "</pre>" : "");
-    applyBtn.disabled = true;
-    applyBtn.textContent = running ? "Applying…" : "Applied";
+    // A failed application (Plex down, token rejected…) can be retried
+    const failed = !running && s.exit !== 0;
+    applyBtn.disabled = !failed;
+    applyBtn.textContent = running ? "Applying…" : failed ? "Apply again" : "Applied";
     if (running) setTimeout(poll, 2000);
   }
   function poll() {
