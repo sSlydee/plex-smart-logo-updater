@@ -3,6 +3,16 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.6.3] - 2026-09-29
+
+### Fixed
+- Review server sign-in limit: the client address is the last `X-Forwarded-For` entry (added by the proxy), so it can no longer be forged to bypass the limit or lock someone else out; HTTP Basic auth guesses now count towards the same limit.
+- An invalid or negative `Content-Length` is refused instead of blocking or dropping the connection.
+- Signing out revokes the session on the server, not only in the browser.
+- A dry run is only superseded by a newer full run that completed and covered its libraries, not by an interrupted, running or single-library one. Each run now records this in `run.json` (older folders are still read from their summary).
+- An application that cannot start reports an error; a reused process ID is no longer taken for a running application.
+- The run state files (`run.json`, `applied.json`) are defined in one shared module (`runstate.py`).
+
 ## [1.6.2] - 2026-09-29
 
 ### Changed
@@ -110,6 +120,7 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.6.3]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.3
 [1.6.2]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.2
 [1.6.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.1
 [1.6.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.0

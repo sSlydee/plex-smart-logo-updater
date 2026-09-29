@@ -3,6 +3,7 @@ import base64
 import importlib
 import json
 import os
+import re
 import sys
 import threading
 import urllib.error
@@ -175,7 +176,7 @@ def test_outdated_dry_run_cannot_be_applied(server):
     newer = logs / "2026-09-30_06h00m01_simulation"
     newer.mkdir()
     (newer / "review.html").write_text("<html><head></head></html>")
-    (newer / "_summary.txt").write_text("OVERALL SUMMARY\n")  # full run: no "Selected" line
+    (newer / "run.json").write_text(json.dumps({"targeted": False, "complete": True, "libraries": ["Films"]}))
     assert json.loads(request(base + f"/run/{RUN}/status")[1])["outdated"] is True
     status, body = apply(base, rs)
     assert status == 409 and "newer dry run" in body
@@ -210,3 +211,85 @@ def test_newer_run_with_the_same_changes_supersedes(server):
     (newer / "review.html").write_text(page)  # same change "7"
     (newer / "_summary.txt").write_text("  Selected    : 1 title(s) from 1 ratingKey(s)\n")
     assert json.loads(request(base + f"/run/{RUN}/status")[1])["outdated"] is True
+
+
+def newer_run(logs, info=None, summary_text=None):
+    newer = logs / "2026-09-30_06h00m01_simulation"
+    newer.mkdir()
+    if info is not None:
+        (newer / "run.json").write_text(json.dumps(info))
+    if summary_text is not None:
+        (newer / "_summary.txt").write_text(summary_text)
+    return newer
+
+
+@pytest.mark.parametrize("info, summary_text, expected", [
+    ({"targeted": False, "complete": False, "libraries": ["Films"]}, None, False),  # interrupted / still running
+    ({"targeted": False, "complete": True, "libraries": ["Séries TV"]}, None, False),  # other libraries only
+    (None, "OVERALL SUMMARY\n  [!] Cannot connect to the Plex server\n", False),   # legacy run that stopped
+    (None, "OVERALL SUMMARY\n  TOTAL (4 min 38 s)\n", True),                          # legacy complete run
+])
+def test_only_a_complete_run_covering_the_libraries_outdates(server, info, summary_text, expected):
+    rs, base, logs = server
+    page = json.loads(re.search(r'id="data">(.*)</script>', (logs / RUN / "review.html").read_text()).group(1))
+    for c in page["cards"]:
+        c["library"] = "Films"
+    (logs / RUN / "review.html").write_text('<html><head></head><body><script type="application/json" id="data">'
+                                            + json.dumps(page) + "</script></body></html>")
+    newer_run(logs, info, summary_text)
+    assert json.loads(request(base + f"/run/{RUN}/status")[1])["outdated"] is expected
+
+
+def test_forged_forwarded_for_does_not_bypass_the_limit(server, monkeypatch):
+    rs, base, _ = server
+    monkeypatch.setattr(rs.time, "sleep", lambda s: None)
+    form = urllib.parse.urlencode({"user": "plex", "password": "wrong"}).encode()
+    for i in range(rs.MAX_FAILURES):
+        raw(base + "/login", data=form, headers={"X-Forwarded-For": f"10.0.0.{i}, 203.0.113.9"})
+    right = urllib.parse.urlencode({"user": "plex", "password": "secret"}).encode()
+    assert raw(base + "/login", data=right, headers={"X-Forwarded-For": "1.2.3.4, 203.0.113.9"})[0] == 429
+
+
+def test_basic_auth_guesses_count_as_failures(server):
+    rs, base, _ = server
+    for _ in range(rs.MAX_FAILURES):
+        assert request(base + "/", auth=("plex", "guess"))[0] in (200, 303)
+    status, _, _ = raw(base + "/", headers={"Authorization": "Basic " + base64.b64encode(b"plex:secret").decode()})
+    assert status == 303  # locked out for a while, even with the right password
+
+
+@pytest.mark.parametrize("length", ["-1", "abc"])
+def test_invalid_content_length_is_refused(server, length):
+    rs, base, _ = server
+    import http.client
+    host, port = base.split("//")[1].split(":")
+    for path in ("/login", f"/run/{RUN}/apply"):
+        conn = http.client.HTTPConnection(host, int(port), timeout=5)
+        conn.putrequest("POST", path)
+        conn.putheader("Content-Length", length)
+        conn.putheader("Authorization", "Basic " + base64.b64encode(b"plex:secret").decode())
+        conn.putheader("X-Review-Token", rs.TOKEN)
+        conn.endheaders()
+        assert conn.getresponse().status == 400
+        conn.close()
+
+
+def test_sign_out_revokes_the_session(server):
+    _, base, _ = server
+    cookie = sign_in(base)[1]["Set-Cookie"].split(";")[0]
+    assert raw(base + "/", headers={"Cookie": cookie})[0] == 200
+    raw(base + "/logout", headers={"Cookie": cookie})
+    assert raw(base + "/", headers={"Cookie": cookie})[0] == 303
+
+
+def test_application_that_cannot_start_reports_an_error(server, monkeypatch):
+    rs, base, logs = server
+    monkeypatch.setattr(rs.subprocess, "Popen", lambda *a, **k: (_ for _ in ()).throw(OSError("no python")))
+    status, body = apply(base, rs)
+    assert status == 409 and "cannot start" in body
+    assert not (logs / RUN / "applied.json").exists()  # can be retried
+
+
+def test_reused_pid_is_not_an_application(server):
+    rs, _, _ = server
+    assert rs._alive(os.getpid()) is False  # this test process: alive, but not the application

@@ -58,11 +58,12 @@ import envfile
 import ignorelist
 import quebec
 import html_report
+import runstate
 import notify as notifier
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-__version__ = "1.6.2"
+__version__ = "1.6.3"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -1228,19 +1229,7 @@ def mark_applied(choices_path, run_dir):
     Records in the dry run's folder that its choices were applied (applied.json),
     so review_server.py does not offer to apply them again.
     """
-    folder = os.path.dirname(os.path.abspath(choices_path))
-    if not folder.endswith(("_simulation",)) and not re.search(r"_simulation_\d+$", folder):
-        return
-    path = os.path.join(folder, "applied.json")
-    if os.path.exists(path):
-        return  # applied from review_server.py: it records the state itself
-    now = time.strftime("%Y-%m-%d %H:%M")
-    try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({"started": now, "finished": now, "exit": 0, "pid": None,
-                       "application": os.path.basename(run_dir.rstrip("/"))}, f, indent=1)
-    except OSError:
-        pass
+    runstate.mark_applied(os.path.dirname(os.path.abspath(choices_path)), run_dir)
 
 
 def review_link(run_dir):
@@ -1258,6 +1247,9 @@ def run(opts):
 
     run_dir = new_run_dir(mode)
     prune_logs()
+    # run.json: lets review_server.py tell a complete full run from a targeted or interrupted one
+    targeted = bool(opts.rating_keys or opts.choices)
+    runstate.write_run_info(run_dir, targeted, TARGET_LIBRARIES, complete=False)
     summary = Log(os.path.join(run_dir, "_summary.txt"))
 
     ctx = Context()
@@ -1394,6 +1386,7 @@ def run(opts):
     summary(LINE)
     summary.close()
 
+    runstate.write_run_info(run_dir, targeted, [name for name, _ in per_library], complete=True)
     if opts.apply and opts.choices:
         mark_applied(opts.choices, run_dir)
     if opts.notify:

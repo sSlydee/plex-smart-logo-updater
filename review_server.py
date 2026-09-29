@@ -37,6 +37,7 @@ from urllib.parse import parse_qs, quote
 
 import envfile
 import html_report
+import runstate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 envfile.load_into_environ(os.environ.get("PLEX_CONFIG", os.path.join(HERE, "config.env")))
@@ -49,9 +50,9 @@ PASSWORD = os.environ.get("REVIEW_PASSWORD", "")
 SCRIPT = os.path.join(HERE, "plex-smart-logo-updater.py")
 
 # Dry-run folders only (never an application or undo folder)
-RUN_NAME = re.compile(r"^\d{4}-\d{2}-\d{2}_\d{2}h\d{2}m\d{2}_simulation(_\d+)?$")
+RUN_NAME = runstate.DRY_RUN_NAME
 ROUTE = re.compile(r"^/run/([^/]+)/(apply|status)?$")
-STATE_FILE = "applied.json"        # in the dry run's folder, once an application was started
+STATE_FILE = runstate.APPLIED_FILE  # in the dry run's folder, once an application was started
 OUTPUT_FILE = "apply-output.txt"   # output of that application
 MAX_BODY = 5 * 1024 * 1024
 # Anti-CSRF token, embedded in the served pages and required to apply
@@ -66,6 +67,14 @@ SESSION_KEY = hashlib.sha256(f"plex-smart-logo-updater session\0{USER}\0{PASSWOR
 MAX_FAILURES = 10           # failed sign-ins per address...
 FAILURE_WINDOW = 15 * 60    # ...within this window, then sign-in is refused for a while
 _FAILURES = {}
+# Sessions signed out before their expiry: {signature: expiry}, kept across restarts
+REVOKED_PATH = os.path.join(LOGS_DIR, ".review-revoked.json")
+try:
+    with open(REVOKED_PATH, encoding="utf-8") as _f:
+        _REVOKED = {k: int(v) for k, v in json.load(_f).items()}
+except (OSError, ValueError, AttributeError):
+    _REVOKED = {}
+_RUN_INFO = {}  # folder -> ((file, mtime), info)
 
 
 def new_session():
@@ -75,16 +84,38 @@ def new_session():
 
 def valid_session(value):
     expiry, _, sig = (value or "").partition(".")
-    if not expiry.isdigit() or int(expiry) < time.time():
+    if not expiry.isdigit() or int(expiry) < time.time() or sig in _REVOKED:
         return False
     return hmac.compare_digest(sig, hmac.new(SESSION_KEY, expiry.encode(), hashlib.sha256).hexdigest())
+
+
+def revoke_session(value):
+    """Signing out invalidates the session on the server too, not only in the browser."""
+    if not valid_session(value):
+        return
+    expiry, _, sig = value.partition(".")
+    now = time.time()
+    for key in [k for k, v in _REVOKED.items() if v < now]:
+        del _REVOKED[key]
+    _REVOKED[sig] = int(expiry)
+    try:
+        runstate.write(LOGS_DIR, os.path.basename(REVOKED_PATH), _REVOKED)
+    except OSError:
+        pass
 
 
 def too_many_failures(address):
     now = time.time()
     recent = [t for t in _FAILURES.get(address, []) if now - t < FAILURE_WINDOW]
-    _FAILURES[address] = recent
+    if recent:
+        _FAILURES[address] = recent
+    else:
+        _FAILURES.pop(address, None)
     return len(recent) >= MAX_FAILURES
+
+
+def record_failure(address):
+    _FAILURES.setdefault(address, []).append(time.time())
 
 
 def relative_root(path):
@@ -101,18 +132,11 @@ def run_dir(name):
 
 
 def read_state(folder):
-    try:
-        with open(os.path.join(folder, STATE_FILE), encoding="utf-8") as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return None
+    return runstate.read(folder, STATE_FILE)
 
 
 def write_state(folder, state):
-    tmp = os.path.join(folder, STATE_FILE + ".tmp")
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(state, f, indent=1)
-    os.replace(tmp, os.path.join(folder, STATE_FILE))
+    runstate.write(folder, STATE_FILE, state)
 
 
 def tail(path, lines=40):
@@ -123,13 +147,42 @@ def tail(path, lines=40):
         return ""
 
 
-def is_full_run(folder):
-    """A full dry run (all libraries), as opposed to a targeted one (Tautulli, --rating-key)."""
+def run_info(folder):
+    """
+    {"targeted", "full", "libraries"} of a run, from its run.json (cached by
+    modification time). "full" = a complete run over whole libraries, which
+    supersedes older dry runs of those libraries; an interrupted or running one
+    does not. Folders written before run.json existed are read from their summary
+    (a targeted run lists its selection, a complete run ends with its totals);
+    their libraries are unknown (None).
+    """
+    source = os.path.join(folder, runstate.RUN_FILE)
+    if not os.path.exists(source):
+        source = os.path.join(folder, "_summary.txt")
     try:
-        with open(os.path.join(folder, "_summary.txt"), encoding="utf-8") as f:
-            return "Selected    :" not in f.read()
+        key = (source, os.path.getmtime(source))
     except OSError:
-        return False
+        return {"targeted": False, "full": False, "libraries": []}
+    cached = _RUN_INFO.get(folder)
+    if cached and cached[0] == key:
+        return cached[1]
+    if source.endswith(runstate.RUN_FILE):
+        data = runstate.read(folder, runstate.RUN_FILE) or {}
+        targeted = bool(data.get("targeted"))
+        info = {"targeted": targeted, "full": bool(data.get("complete")) and not targeted,
+                "libraries": data.get("libraries") or []}
+    else:
+        with open(source, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        targeted = "Selected    :" in text
+        info = {"targeted": targeted, "full": not targeted and "TOTAL (" in text, "libraries": None}
+    _RUN_INFO[folder] = (key, info)
+    return info
+
+
+def is_full_run(folder):
+    """A full dry run (whole libraries), as opposed to a targeted one (Tautulli, --rating-key)."""
+    return not run_info(folder)["targeted"]
 
 
 def outdated(folder):
@@ -140,12 +193,19 @@ def outdated(folder):
     """
     name = os.path.basename(folder)
     mine = None
+    my_libraries = None
     for n in os.listdir(LOGS_DIR):
         other = os.path.join(LOGS_DIR, n)
         if n <= name or not RUN_NAME.match(n):
             continue
-        if is_full_run(other):
-            return True
+        info = run_info(other)
+        if info["full"]:
+            if info["libraries"] is None:
+                return True
+            if my_libraries is None:
+                my_libraries = set(summary(folder)["libraries"])
+            if my_libraries <= set(info["libraries"]):
+                return True
         if os.path.isfile(os.path.join(other, "review.html")):
             if mine is None:
                 mine = set(summary(folder)["ids"])
@@ -169,13 +229,21 @@ def status(folder):
 
 
 def _alive(pid):
+    """True while the recorded application still runs (not another process that reused its PID)."""
     if not pid:
         return False
     try:
         os.kill(pid, 0)
     except OSError:
         return False
-    return True
+    if not os.path.isdir("/proc"):
+        return True  # no /proc (not Linux): the signal check is all we have
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            cmdline = f.read()
+    except OSError:
+        return False
+    return b"--apply" in cmdline and os.path.basename(SCRIPT).encode() in cmdline
 
 
 def start_apply(folder, choices):
@@ -189,10 +257,14 @@ def start_apply(folder, choices):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(choices, f, ensure_ascii=False, indent=1)
         out = open(os.path.join(folder, OUTPUT_FILE), "w", encoding="utf-8")
-        proc = subprocess.Popen([sys.executable, SCRIPT, "--apply", "--choices", path, "--notify", "--quiet"],
-                                cwd=HERE, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                start_new_session=True)
-        out.close()
+        try:
+            proc = subprocess.Popen([sys.executable, SCRIPT, "--apply", "--choices", path, "--notify", "--quiet"],
+                                    cwd=HERE, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                    start_new_session=True)
+        except OSError as e:
+            return f"cannot start the application: {e}"
+        finally:
+            out.close()
         state = {"started": time.strftime("%Y-%m-%d %H:%M"), "pid": proc.pid, "exit": None, "finished": None}
         write_state(folder, state)
 
@@ -396,8 +468,17 @@ class Handler(BaseHTTPRequestHandler):
         return None
 
     def client(self):
-        # Behind the reverse proxy, the client's address is in X-Forwarded-For
-        return (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+        # Behind the reverse proxy, the client's address is the LAST X-Forwarded-For entry: the
+        # proxy appends it, while earlier entries come from the client and can be forged
+        return (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[-1].strip()
+
+    def content_length(self):
+        """The request's body length, or None when it is missing, invalid or negative."""
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return None
+        return length if length >= 0 else None
 
     def credentials_ok(self, user, password):
         ok_user = hmac.compare_digest(user.encode(), USER.encode())
@@ -409,11 +490,16 @@ class Handler(BaseHTTPRequestHandler):
             return True
         header = self.headers.get("Authorization", "")
         if header.startswith("Basic "):
+            address = self.client()
+            if too_many_failures(address):
+                return False
             try:
                 user, _, password = base64.b64decode(header[6:]).decode("utf-8").partition(":")
             except ValueError:
-                return False
-            return self.credentials_ok(user, password)
+                user, password = "", ""
+            if self.credentials_ok(user, password):
+                return True
+            record_failure(address)  # same limit as the sign-in page
         return False
 
     def send(self, code, body, content_type="text/html; charset=utf-8", headers=()):
@@ -457,6 +543,7 @@ class Handler(BaseHTTPRequestHandler):
             message = "You are signed out." if "out" in query else ""
             return self.send(200, login_page(next_path if NEXT_PATH.match(next_path) else "", message, error=False))
         if path == "/logout":
+            revoke_session(self.cookie(COOKIE))
             return self.send(303, "", headers=[("Location", "login?out=1"), self.session_cookie("", 0)])
         if not self.check(path):
             return
@@ -493,9 +580,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json(404, {"error": "not found"})
         if not hmac.compare_digest(self.headers.get("X-Review-Token", ""), TOKEN):
             return self.send_json(403, {"error": "the page is out of date: reload it, then apply again"})
-        length = int(self.headers.get("Content-Length") or 0)
-        if not 0 < length <= MAX_BODY:
-            return self.send_json(400, {"error": "empty or too large request"})
+        length = self.content_length()
+        if length is None or not 0 < length <= MAX_BODY:
+            return self.send_json(400, {"error": "empty, invalid or too large request"})
         try:
             choices = json.loads(self.rfile.read(length))
         except ValueError:
@@ -510,8 +597,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
     def sign_in(self):
-        length = int(self.headers.get("Content-Length") or 0)
-        form = parse_qs(self.rfile.read(min(length, 10000)).decode("utf-8", "replace")) if length else {}
+        length = self.content_length()
+        if length is None or length > 10000:
+            return self.send(400, login_page("", "Invalid request."))
+        form = parse_qs(self.rfile.read(length).decode("utf-8", "replace")) if length else {}
         next_path = form.get("next", [""])[0]
         next_path = next_path if NEXT_PATH.match(next_path) else ""
         address = self.client()
@@ -521,7 +610,7 @@ class Handler(BaseHTTPRequestHandler):
             _FAILURES.pop(address, None)
             return self.send(303, "", headers=[("Location", "./" + next_path),
                                                self.session_cookie(new_session(), SESSION_DAYS * 86400)])
-        _FAILURES.setdefault(address, []).append(time.time())
+        record_failure(address)
         time.sleep(1)  # slows down password guessing
         self.send(401, login_page(next_path, "Wrong login or password."))
 
