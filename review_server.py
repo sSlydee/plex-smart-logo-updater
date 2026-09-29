@@ -153,27 +153,32 @@ def revoke_session(value):
             sys.stderr.write(f"Cannot save the signed-out session ({e}): it stays valid after a restart\n")
 
 
+_FAILURES_LOCK = threading.Lock()
+
+
 def too_many_failures(address):
-    now = time.time()
-    recent = [t for t in _FAILURES.get(address, []) if now - t < FAILURE_WINDOW]
-    if recent:
-        _FAILURES[address] = recent
-    else:
-        _FAILURES.pop(address, None)
-    return len(recent) >= MAX_FAILURES
+    with _FAILURES_LOCK:
+        now = time.time()
+        recent = [t for t in _FAILURES.get(address, []) if now - t < FAILURE_WINDOW]
+        if recent:
+            _FAILURES[address] = recent
+        else:
+            _FAILURES.pop(address, None)
+        return len(recent) >= MAX_FAILURES
 
 
 MAX_TRACKED = 10000  # addresses remembered at most: forged or rotating addresses cannot fill the memory
 
 
 def record_failure(address):
-    if address not in _FAILURES and len(_FAILURES) >= MAX_TRACKED:
-        now = time.time()
-        for key in [k for k, times in _FAILURES.items() if not times or now - times[-1] >= FAILURE_WINDOW]:
-            del _FAILURES[key]
-        if len(_FAILURES) >= MAX_TRACKED:
-            _FAILURES.pop(next(iter(_FAILURES)))
-    _FAILURES.setdefault(address, []).append(time.time())
+    with _FAILURES_LOCK:
+        if address not in _FAILURES and len(_FAILURES) >= MAX_TRACKED:
+            now = time.time()
+            for key in [k for k, times in _FAILURES.items() if not times or now - times[-1] >= FAILURE_WINDOW]:
+                del _FAILURES[key]
+            if len(_FAILURES) >= MAX_TRACKED:
+                _FAILURES.pop(next(iter(_FAILURES)))
+        _FAILURES.setdefault(address, []).append(time.time())
 
 
 def relative_root(path):
@@ -326,12 +331,18 @@ def start_apply(folder, choices):
     def wait():
         code = proc.wait()
         with _STATE_LOCK:
-            current = read_state(folder) or state
-            if current.get("pid") == proc.pid:  # never overwrite the state of a later application
-                current.update(exit=code, finished=time.strftime("%Y-%m-%d %H:%M"))
-                write_state(folder, current)
-            if _PROCS.get(folder) is proc:
-                del _PROCS[folder]
+            try:
+                current = read_state(folder) or state
+                if current.get("pid") == proc.pid:  # never overwrite the state of a later application
+                    current.update(exit=code, finished=time.strftime("%Y-%m-%d %H:%M"))
+                    write_state(folder, current)
+            except OSError as e:
+                sys.stderr.write(f"Cannot record the end of the application ({e})\n")
+            finally:
+                # Always forgotten: status() then reads applied.json (its "result") instead of
+                # showing "Applying…" forever
+                if _PROCS.get(folder) is proc:
+                    del _PROCS[folder]
 
     threading.Thread(target=wait, daemon=True).start()
     return None

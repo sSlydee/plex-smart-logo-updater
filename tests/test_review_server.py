@@ -458,3 +458,23 @@ def test_application_reads_the_current_config(server, monkeypatch):
     monkeypatch.setitem(rs.os.environ, "PLEX_TOKEN", "OLD-TOKEN-FROM-SERVER-START")
     apply(base, rs)
     assert "inherited" not in seen and seen.get("PLEX_TOKEN") != "OLD-TOKEN-FROM-SERVER-START"
+
+
+def test_failed_end_record_does_not_leave_the_page_applying(server, monkeypatch):
+    """Regression: if recording the end failed (disk full), _PROCS kept the folder and the page showed 'Applying…' forever."""
+    rs, base, logs = server
+    real_write = rs.write_state
+    calls = []
+
+    def flaky(folder, state):
+        calls.append(state.get("exit"))
+        if state.get("exit") is not None:
+            raise OSError("No space left on device")
+        real_write(folder, state)
+    monkeypatch.setattr(rs, "write_state", flaky)
+    assert apply(base, rs)[0] == 200
+    for _ in range(100):
+        if not rs._PROCS:
+            break
+        threading.Event().wait(0.05)
+    assert not rs._PROCS
