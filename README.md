@@ -232,7 +232,7 @@ Some titles should be left alone: a change you rejected, or a logo you removed o
   .venv/bin/python plex-smart-logo-updater.py --ignore "Movies/Edge of Tomorrow"
   ```
 
-  The title can be given as `Library/Title`, `Title`, `Title (year)` or a Plex ratingKey. If several titles match, the script lists them so you can be more specific.
+  The title can be given as `Library/Title`, `Title`, `Title (year)` or a Plex ratingKey (the title's number in Plex: in Plex Web, the last number of the title page's address, after `metadata%2F`). If several titles match, the script lists them with their ratingKey so you can be more specific.
 - **Remove a title** with `--unignore "Edge of Tomorrow"`, and **show the list** with `--list-ignored`.
 
 The list is stored in `ignored.json`, next to the script.
