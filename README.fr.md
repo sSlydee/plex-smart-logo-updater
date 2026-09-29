@@ -491,8 +491,7 @@ L'OCR ne lit pas toujours parfaitement (« TRAIT » au lieu de « TRAIN »), mai
 | Problème | Solution |
 |---|---|
 | `Permission denied` en lançant `./install.sh` | Lancez `bash install.sh` à la place. |
-| `Python 3.8 or later is required` | Installez un Python plus récent, ou lancez `PYTHON=python3.11 ./install.sh` si plusieurs versions sont installées. |
-| L'installateur s'arrête sur `rapidocr-onnxruntime` (erreur pip) | Votre Python est en 3.13 ou plus récent : supprimez le dossier `.venv` et lancez `PYTHON=python3.12 ./install.sh` (ou 3.8 à 3.11). |
+| `Python 3.8 to 3.12 is required` | Si plusieurs versions sont installées, lancez `PYTHON=python3.12 ./install.sh` (ou 3.8 à 3.11), après avoir supprimé le dossier `.venv` si une tentative précédente l'a créé. Sinon, installez un Python de cette plage. |
 | `No module named ...` | Lancez le script avec `.venv/bin/python`, pas `python3`. |
 | L'installateur s'arrête avec `The dependencies do not load correctly` | Supprimez le dossier `.venv` et relancez `./install.sh`. Si le problème persiste, ouvrez une issue avec la sortie complète. |
 | `Plex token rejected` | Votre token a changé : `.venv/bin/python configure.py --token`. |

@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.7.2] - 2026-09-30
+
+### Fixed
+- `install.sh` refuses Python 3.13 and later with a clear message (the OCR engine, rapidocr-onnxruntime, does not install there yet) instead of stopping on a pip error; it suggests `PYTHON=python3.12 ./install.sh`.
+
+### Documentation
+- READMEs checked against the code by a review: supported Python versions (3.8 to 3.12), review server uninstall, sign-in limits, Tautulli queue retries, `PLEX_CONFIG`, more troubleshooting.
+
 ## [1.7.1] - 2026-09-29
 
 ### Security
@@ -159,6 +167,7 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.7.2]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.7.2
 [1.7.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.7.1
 [1.7.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.7.0
 [1.6.4]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.4

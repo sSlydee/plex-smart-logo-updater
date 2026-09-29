@@ -4,8 +4,15 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 PYTHON="${PYTHON:-python3}"
-if ! "$PYTHON" -c 'import sys; sys.exit(sys.version_info < (3, 8))' 2>/dev/null; then
-    echo "Python 3.8 or later is required (command: $PYTHON)." >&2
+if ! "$PYTHON" -c 'import sys' 2>/dev/null; then
+    echo "Python 3.8 to 3.12 is required (command not found: $PYTHON)." >&2
+    exit 1
+fi
+# The OCR engine (rapidocr-onnxruntime) does not install on Python 3.13 or later yet
+if ! "$PYTHON" -c 'import sys; sys.exit(not (3, 8) <= sys.version_info[:2] <= (3, 12))'; then
+    version=$("$PYTHON" -c 'import sys; print("%d.%d" % sys.version_info[:2])')
+    echo "Python 3.8 to 3.12 is required ($PYTHON is $version)." >&2
+    echo "If another version is installed, run for example: PYTHON=python3.12 ./install.sh" >&2
     exit 1
 fi
 
