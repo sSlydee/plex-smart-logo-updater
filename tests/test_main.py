@@ -582,3 +582,30 @@ def test_queue_is_where_the_tautulli_hook_writes_it(main):
     hook = open(os.path.join(ROOT, "tautulli-hook.sh"), encoding="utf-8").read()
     assert "logs/tautulli-queue.txt" in hook
     assert main.QUEUE_PATH == os.path.join(ROOT, "logs", "tautulli-queue.txt")
+
+
+def test_undo_reports_failures_in_its_exit_code(main, monkeypatch, tmp_path):
+    """Regression: --undo exited with 0 even when Plex was unreachable."""
+    import argparse
+    folder = tmp_path / "2026-01-01_00h00m00_application"
+    folder.mkdir()
+    (folder / "undo.json").write_text(json.dumps({"entries": []}))
+    monkeypatch.setattr(main, "LOGS_DIR", str(tmp_path / "logs"))
+
+    def refuse(*a, **k):
+        raise ConnectionError("refused")
+    monkeypatch.setattr(main, "PlexServer", refuse)
+    assert main.undo(argparse.Namespace(undo=str(folder), apply=False)) == main.STOPPED
+
+
+def test_prune_never_deletes_the_current_run(main, monkeypatch, tmp_path):
+    """Regression: with PLEX_LOGS_KEEP=0 a run deleted its own new folder, then crashed writing its logs."""
+    def refuse(*a, **k):
+        raise ConnectionError("refused")
+    monkeypatch.setattr(main, "LOGS_DIR", str(tmp_path / "logs"))
+    monkeypatch.setattr(main, "LOGS_KEEP", 0)
+    monkeypatch.setattr(main, "PlexServer", refuse)
+    monkeypatch.setattr(main, "HEALTHCHECK_URL", "")
+    assert main.run(run_options(apply=False)) == main.STOPPED
+    [folder] = os.listdir(tmp_path / "logs")
+    assert os.path.exists(tmp_path / "logs" / folder / "_summary.txt")

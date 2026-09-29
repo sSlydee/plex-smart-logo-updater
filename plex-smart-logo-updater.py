@@ -1223,6 +1223,12 @@ def run_lock():
         yield
 
 
+def application_pending(folder):
+    """A dry run whose application (started from the review server) is still running."""
+    state = runstate.read(folder, runstate.APPLIED_FILE)
+    return bool(state) and state.get("exit") is None and runstate.application_running(state.get("pid"))
+
+
 def prune_logs(keep=()):
     """
     Deletes the oldest dry-run log folders beyond LOGS_KEEP. Folders holding an
@@ -1239,7 +1245,8 @@ def prune_logs(keep=()):
                 if os.path.isdir(os.path.join(LOGS_DIR, n))
                 and re.search(r"_(simulation|undo-simulation)(_\d+)?$", n)
                 and not any(os.path.exists(os.path.join(LOGS_DIR, n, f)) for f in ("undo.json", "annulation.json"))
-                and os.path.abspath(os.path.join(LOGS_DIR, n)) not in keep]
+                and os.path.abspath(os.path.join(LOGS_DIR, n)) not in keep
+                and not application_pending(os.path.join(LOGS_DIR, n))]
     for name in dry_runs[:max(0, len(dry_runs) - LOGS_KEEP)]:
         shutil.rmtree(os.path.join(LOGS_DIR, name), ignore_errors=True)
 
@@ -1315,7 +1322,8 @@ def run(opts):
     run_dir = new_run_dir(mode)
     choices = load_choices(opts.choices) if opts.choices else None
     # The dry run being applied keeps its folder (choices.json, review page) even if it is old
-    prune_logs(keep={os.path.dirname(os.path.abspath(opts.choices))} if opts.choices else ())
+    keep = {os.path.abspath(run_dir)} | ({os.path.dirname(os.path.abspath(opts.choices))} if opts.choices else set())
+    prune_logs(keep=keep)
     # run.json: lets review_server.py tell a complete full run from a targeted or interrupted one
     targeted = bool(opts.rating_keys or opts.choices)
     runstate.write_run_info(run_dir, targeted, TARGET_LIBRARIES, complete=False)
@@ -1714,7 +1722,7 @@ def undo(opts):
     except Exception as ex:
         log(f"  [!] {'Plex token rejected: ' + TOKEN_FIX if is_unauthorized(ex) else redact(ex)}")
         log.close()
-        return
+        return STOPPED
     done, skipped, errors = [], [], []
     for n, e in enumerate(reversed(entries), 1):
         log("")
@@ -1765,6 +1773,7 @@ def undo(opts):
         log(f"  Dry run only: run again with --undo {opts.undo} --apply to restore.")
     log(LINE)
     log.close()
+    return ERRORS if errors else OK
 
 
 def take_queue(path=None):
@@ -1872,7 +1881,7 @@ if __name__ == "__main__":
         manage_ignore(options)
     elif options.undo:
         with run_lock():
-            undo(options)
+            raise SystemExit(undo(options))
     else:
         queued = []
         try:
