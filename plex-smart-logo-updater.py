@@ -1538,12 +1538,15 @@ def stop(opts, summary, error):
     summary(LINE)
     summary.close()
     # While Plex stays down, the Tautulli queue is retried every few minutes: notify the failure once
-    if opts.notify and NOTIFY_TARGETS and failure_is_new(message, save=False):
+    # The kind of failure, not its text: error texts can differ at every attempt
+    # (a connect timeout quotes an object address such as "at 0x7fa5d3963f40")
+    kind_of_failure = "token rejected" if is_unauthorized(error) else f"cannot connect to {PLEX_URL}"
+    if opts.notify and NOTIFY_TARGETS and failure_is_new(kind_of_failure, save=False):
         results = notifier.send(HTTP, NOTIFY_TARGETS, "Plex logos: run failed", message)
         for kind, err in results:
             print(f"Notification {kind}: {'sent' if err is None else 'failed (' + err + ')'}")
         if any(err is None for _, err in results):
-            failure_is_new(message)  # remembered only once it reached someone
+            failure_is_new(kind_of_failure)  # remembered only once it reached someone
     ping_healthcheck(False, message)
 
 

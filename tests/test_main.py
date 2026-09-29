@@ -609,3 +609,18 @@ def test_prune_never_deletes_the_current_run(main, monkeypatch, tmp_path):
     assert main.run(run_options(apply=False)) == main.STOPPED
     [folder] = os.listdir(tmp_path / "logs")
     assert os.path.exists(tmp_path / "logs" / folder / "_summary.txt")
+
+
+def test_timeouts_with_changing_texts_are_notified_once(main, monkeypatch, tmp_path):
+    """Regression: a connect timeout quotes an object address that changes at every attempt, so each retry notified again."""
+    import argparse
+    sender = RecordingSender(None)
+    monkeypatch.setattr(main.notifier, "send", sender)
+    monkeypatch.setattr(main, "NOTIFY_TARGETS", [("discord", "https://d/x")])
+    monkeypatch.setattr(main, "FAILURE_STATE", str(tmp_path / "failure.json"))
+    monkeypatch.setattr(main, "HEALTHCHECK_URL", "")
+    for address in ("0x7fa5d3963f40", "0x7f11aa22bb30", "0x7fee00ff1120"):
+        summary = main.Log(str(tmp_path / "summary.txt"), echo=False)
+        error = TimeoutError(f"ConnectTimeoutError(<HTTPConnection(host='10.0.0.1', port=32400) at {address}>)")
+        main.stop(argparse.Namespace(notify=True), summary, error)
+    assert sender.calls == 1
