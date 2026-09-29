@@ -1529,17 +1529,20 @@ def stop(opts, summary, error):
     summary(LINE)
     summary.close()
     # While Plex stays down, the Tautulli queue is retried every few minutes: notify the failure once
-    if opts.notify and NOTIFY_TARGETS and failure_is_new(message):
-        for kind, err in notifier.send(HTTP, NOTIFY_TARGETS, "Plex logos: run failed", message):
+    if opts.notify and NOTIFY_TARGETS and failure_is_new(message, save=False):
+        results = notifier.send(HTTP, NOTIFY_TARGETS, "Plex logos: run failed", message)
+        for kind, err in results:
             print(f"Notification {kind}: {'sent' if err is None else 'failed (' + err + ')'}")
+        if any(err is None for _, err in results):
+            failure_is_new(message)  # remembered only once it reached someone
     ping_healthcheck(False, message)
 
 
 FAILURE_STATE = os.path.join(LOGS_DIR, ".notified-failure.json")
 
 
-def failure_is_new(message, state_path=None):
-    """True the first time a failure is seen since the last run that went fine (recorded)."""
+def failure_is_new(message, state_path=None, save=True):
+    """True the first time a failure is seen since the last run that went fine (recorded unless save=False)."""
     state_path = state_path or FAILURE_STATE
     try:
         with open(state_path, encoding="utf-8") as f:
@@ -1547,11 +1550,12 @@ def failure_is_new(message, state_path=None):
                 return False
     except (OSError, ValueError):
         pass
-    try:
-        with open(state_path, "w", encoding="utf-8") as f:
-            json.dump(message, f)
-    except OSError:
-        pass
+    if save:
+        try:
+            with open(state_path, "w", encoding="utf-8") as f:
+                json.dump(message, f)
+        except OSError:
+            pass
     return True
 
 
@@ -1563,28 +1567,30 @@ def clear_failure(state_path=None):
         pass
 
 
-def new_manual_titles(manual, state_path, targeted=False):
+def new_manual_titles(manual, state_path, targeted=False, save=True):
     """
     Titles to handle by hand ([CHECK], locked Quebec logos or posters) that were
     not already reported by a previous notification. A full run replaces the
     state with the current list, so a title that is fixed and comes back is
     reported again; a targeted run (--rating-key, e.g. from Tautulli) only sees
     a few titles, so it adds to the state without forgetting the others.
+    save=False only computes: the state is saved once the notification went out.
     """
     try:
         with open(state_path, encoding="utf-8") as f:
             already = set(json.load(f))
     except (OSError, ValueError):
         already = set()
-    try:
-        with open(state_path, "w", encoding="utf-8") as f:
-            json.dump(sorted(already | set(manual) if targeted else set(manual)), f, ensure_ascii=False, indent=1)
-    except OSError:
-        pass
+    if save:
+        try:
+            with open(state_path, "w", encoding="utf-8") as f:
+                json.dump(sorted(already | set(manual) if targeted else set(manual)), f, ensure_ascii=False, indent=1)
+        except OSError:
+            pass
     return [t for t in manual if t not in already]
 
 
-def new_pending_changes(pending, state_path, targeted):
+def new_pending_changes(pending, state_path, targeted, save=True):
     """
     Changes to review that were not already notified. A full run notifies every
     pending change (weekly reminder) and resets the state; a targeted run
@@ -1598,11 +1604,12 @@ def new_pending_changes(pending, state_path, targeted):
         already = {}
     new = {k: v for k, v in pending.items() if already.get(k) != v}
     state = dict(already, **pending) if targeted else dict(pending)
-    try:
-        with open(state_path, "w", encoding="utf-8") as f:
-            json.dump(state, f, ensure_ascii=False, indent=1)
-    except OSError:
-        pass
+    if save:
+        try:
+            with open(state_path, "w", encoding="utf-8") as f:
+                json.dump(state, f, ensure_ascii=False, indent=1)
+        except OSError:
+            pass
     return new if targeted else dict(pending)
 
 
@@ -1628,13 +1635,22 @@ def notify(opts, run_dir, totals, page, duration, pending=None):
     manual = totals["check"] + totals["locked_qc"] + totals["poster_check"] + totals["poster_locked_qc"]
     # A run limited to some titles (--rating-key, or the titles of a choices file) only sees those
     targeted = bool(opts.rating_keys or opts.choices)
-    new_manual = new_manual_titles(manual, os.path.join(LOGS_DIR, ".notified-manual.json"), targeted=targeted)
+    manual_state = os.path.join(LOGS_DIR, ".notified-manual.json")
+    pending_state = os.path.join(LOGS_DIR, ".notified-pending.json")
+
+    def remember():
+        """What was reported is saved only once a notification went out (or none was needed)."""
+        new_manual_titles(manual, manual_state, targeted=targeted)
+        if not opts.apply:
+            new_pending_changes(pending or {}, pending_state, targeted=targeted)
+
+    new_manual = new_manual_titles(manual, manual_state, targeted=targeted, save=False)
     if not opts.apply:
-        new_pending = new_pending_changes(pending or {}, os.path.join(LOGS_DIR, ".notified-pending.json"),
-                                          targeted=targeted)
+        new_pending = new_pending_changes(pending or {}, pending_state, targeted=targeted, save=False)
         if not new_pending:
             to_do = 0  # already notified: a targeted run stays quiet
     if not (to_do or totals["error"] or new_manual):
+        remember()
         return
     if not NOTIFY_TARGETS:
         print("[!] --notify: no webhook in NOTIFY_URLS, no notification sent.")
@@ -1660,8 +1676,11 @@ def notify(opts, run_dir, totals, page, duration, pending=None):
     lines.append(f"Logs: {os.path.basename(run_dir.rstrip('/'))} ({minutes(duration)})")
     body = "\n".join(lines)
     markdown = "\n".join(f"• {l}" if not l.startswith(("Review page", "Logs")) else f"`{l}`" for l in lines)
-    for kind, error in notifier.send(HTTP, NOTIFY_TARGETS, title, body, markdown):
+    results = notifier.send(HTTP, NOTIFY_TARGETS, title, body, markdown)
+    for kind, error in results:
         print(f"Notification {kind}: {'sent' if error is None else 'failed (' + error + ')'}")
+    if any(error is None for _, error in results):
+        remember()  # every webhook failed: reported again next time
 
 
 # ---------------------------------------------------------------------------

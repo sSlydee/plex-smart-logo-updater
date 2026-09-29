@@ -541,3 +541,37 @@ def test_requeue_gives_up_after_a_few_tries(main, tmp_path):
         main.take_queue(queue)
     assert main.requeue(["9"], queue) == []
     assert main.take_queue(queue) == []
+
+
+class RecordingSender:
+    def __init__(self, error):
+        self.error, self.calls = error, 0
+
+    def __call__(self, session, targets, title, body, markdown=None):
+        self.calls += 1
+        return [("discord", self.error)]
+
+
+def test_a_failed_notification_is_sent_again(main, monkeypatch, tmp_path):
+    """Regression: the 'already notified' state was saved before sending: one failed webhook call lost the alert."""
+    import argparse
+    monkeypatch.setattr(main, "LOGS_DIR", str(tmp_path))
+    monkeypatch.setattr(main, "NOTIFY_TARGETS", [("discord", "https://d/x")])
+    totals = main.empty_results()
+    totals["check"] = ["Films > Happy Birthdead (2017)"]
+    opts = argparse.Namespace(apply=False, rating_keys=None, choices=None)
+    failing = RecordingSender("503 Service Unavailable")
+    monkeypatch.setattr(main.notifier, "send", failing)
+    main.notify(opts, str(tmp_path / "run"), totals, None, 1.0, {})
+    working = RecordingSender(None)
+    monkeypatch.setattr(main.notifier, "send", working)
+    main.notify(opts, str(tmp_path / "run"), totals, None, 1.0, {})
+    assert working.calls == 1  # reported again, since the first attempt failed
+    main.notify(opts, str(tmp_path / "run"), totals, None, 1.0, {})
+    assert working.calls == 1  # delivered: not repeated
+
+
+def test_a_failed_failure_alert_is_sent_again(main, tmp_path):
+    state = str(tmp_path / "failure.json")
+    assert main.failure_is_new("down", state, save=False) is True
+    assert main.failure_is_new("down", state) is True  # nothing was saved by the unsent attempt
