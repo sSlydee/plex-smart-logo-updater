@@ -142,6 +142,13 @@ cd ~
 rm -rf plex-smart-logo-updater
 ```
 
+If you set up the [review server](#review-and-apply-from-the-browser-optional), stop it and remove its service, then remove its block from your reverse proxy:
+
+```bash
+systemctl --user disable --now plex-smart-logo-review.service
+rm ~/.config/systemd/user/plex-smart-logo-review.service
+```
+
 If you set up the Tautulli hook, also delete its Script agent in Tautulli. Logos and posters already set in Plex stay in place. To restore the previous ones first, [undo](#undoing-an-application) your applications before deleting the folder.
 
 ## Everyday use
@@ -212,6 +219,7 @@ location /logos/ {
 - The server only listens on `127.0.0.1`: it is reached through your reverse proxy, in HTTPS. A sign-in page protects every page; the session lasts 30 days, and changing the password signs everyone out. After 10 failed attempts from the same visitor within 15 minutes, sign-in is refused to that visitor for a while; the visitor is known by the address your proxy adds to `X-Forwarded-For`, so keep that header in the proxy block. After 50 failed attempts within 15 minutes from all visitors together, sign-in is refused to everyone for a while (open sessions keep working). If your proxy adds its own login, turn it off for this address (`auth_basic off;` with nginx).
 - The home page lists the latest dry runs. A dry run can only be applied once (an application that failed, for example while Plex was down, can be applied again), and not once a newer dry run replaces it (a full one covering the same libraries, or one proposing all the same changes): apply that one instead.
 - The notifications link to the page on the server (`REVIEW_URL`) instead of the file path.
+- To change the login, password, port or address, run `configure.py --review-server` again: it restarts the service. To check the service: `systemctl --user status plex-smart-logo-review.service`.
 
 ### Ignore list
 
@@ -290,6 +298,7 @@ A few more details:
 - A season imported episode by episode does not flood you: each pending change is notified once. The automatic run still sends a reminder while a change waits for your review.
 - Runs started at the same time wait for each other.
 - If Plex has not fetched a title's images yet when it is checked, the next automatic run catches it.
+- If Plex cannot be reached, the queued titles are tried again 5 minutes later, up to 6 times; the automatic run catches the rest.
 
 To process titles by hand: `--rating-key 12345`, or `--process-queue` for the queue.
 
@@ -484,6 +493,8 @@ The OCR does not always read perfectly ("TRAIT" instead of "TRAIN"), but the com
 | `Plex token rejected` | Your token changed: `.venv/bin/python configure.py --token`. |
 | `Cannot connect to the Plex server` | Check the address and port. From the machine, `curl http://address:32400/identity` should answer. |
 | `Libraries not found` | The names must match Plex exactly: `.venv/bin/python configure.py --libraries`. |
+| The automatic run does nothing | Read `logs/cron.log`, and check the line with `crontab -l`. |
+| The review page does not open | `systemctl --user status plex-smart-logo-review.service`, then check the reverse proxy block. |
 | A new title is not processed by the Tautulli hook | Check that its library is in `PLEX_LIBRARIES`, and read `logs/tautulli.log`. With Tautulli in a container, run `configure.py --tautulli`. |
 
 ## Good to know
