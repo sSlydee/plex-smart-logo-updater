@@ -473,3 +473,25 @@ def test_a_rejected_token_is_not_logged(main, monkeypatch, tmp_path):
     with pytest.raises(main.TokenError) as stopped:
         main.process_library(None, FakeSection([Item()]), lambda m: None, opts, ctx, ["fr-FR"])
     assert "SecretTok3n" not in str(stopped.value)
+
+
+def test_ignore_list_changes_wait_for_running_runs(main, monkeypatch, tmp_path):
+    """Regression: --unignore/--ignore rewrote ignored.json without the run lock, losing a run's rejections."""
+    import argparse
+    import contextlib
+    import ignorelist
+    path = tmp_path / "ignored.json"
+    lst = ignorelist.IgnoreList(str(path))
+    lst.add(7, "Films", "Edge of Tomorrow", 2014, ignorelist.REASON_MANUAL)
+    lst.save()
+    events = []
+
+    @contextlib.contextmanager
+    def lock():
+        events.append("locked")
+        yield
+
+    monkeypatch.setattr(main, "IGNORE_PATH", str(path))
+    monkeypatch.setattr(main, "run_lock", lock)
+    main.manage_ignore(argparse.Namespace(ignore=None, unignore=["7"], list_ignored=False))
+    assert events == ["locked"] and "7" not in ignorelist.IgnoreList(str(path))

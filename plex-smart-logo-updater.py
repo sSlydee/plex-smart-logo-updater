@@ -1745,6 +1745,14 @@ def find_titles(plex, spec):
 
 
 def manage_ignore(opts):
+    if opts.ignore or opts.unignore:
+        # A run may be adding rejected titles to the same file: wait for it, then read the list
+        with run_lock():
+            return _manage_ignore(opts)
+    return _manage_ignore(opts)
+
+
+def _manage_ignore(opts):
     ignored = ignorelist.IgnoreList(IGNORE_PATH)
     changed = False
     if opts.ignore:
