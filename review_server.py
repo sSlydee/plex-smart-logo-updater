@@ -519,7 +519,7 @@ def login_page(next_path="", message="", error=True):
 
 # Where to go after signing in: only the home page or a dry run's page (no open redirect,
 # and no CR/LF: the value goes into the Location header)
-NEXT_PATH = re.compile(r"^(run/" + RUN_NAME.pattern.strip("^$") + "/)?$")
+NEXT_PATH = re.compile(r"^(run/" + RUN_NAME.pattern.strip("^$") + r"/)?\Z")  # \Z: "$" would allow a final "\n"
 
 
 class Handler(BaseHTTPRequestHandler):

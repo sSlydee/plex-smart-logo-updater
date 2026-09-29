@@ -394,3 +394,11 @@ def test_each_sign_in_gets_its_own_session(server):
     assert raw(base + "/", headers={"Cookie": second})[0] == 200
     secret = logs / ".review-secret"
     assert secret.exists() and oct(secret.stat().st_mode & 0o777) == "0o600"
+
+
+def test_next_with_a_final_line_feed_is_refused(server):
+    """Regression: "$" also matches before a final "\\n", so one LF still reached the Location header."""
+    rs, base, _ = server
+    assert not rs.NEXT_PATH.match(f"run/{RUN}/\n")
+    status, headers, _ = sign_in(base, next_path=f"run/{RUN}/\n")
+    assert status == 303 and headers["Location"] == "./"
