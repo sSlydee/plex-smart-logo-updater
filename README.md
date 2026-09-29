@@ -108,7 +108,7 @@ Press Enter to accept the value shown in `[brackets]`.
 3. **Libraries**: the numbers of the libraries to process, separated by commas (e.g. `1,3,4`), or `all`.
 4. **Logo language**: keep `auto` (each library's own language, then English). The wizard then asks whether to also replace [Quebec posters](#quebec-posters).
 5. **Notifications**: optional. Answer `n` to skip the webhooks, then leave the Uptime Kuma URL empty.
-6. **Automatic run**: pressing Enter sets up a weekly dry run. Pick `never` (type `1`) if you would rather start by hand; you can add it later.
+6. **Automatic run**: pressing Enter three times sets up a weekly dry run on Mondays at 9:00 (the wizard then asks for the hour and the day). Pick `never` (type `1`) if you would rather start by hand; you can add it later.
 
 Your answers are saved in `config.env`, which only you can read.
 
@@ -209,8 +209,8 @@ location /logos/ {
 }
 ```
 
-- The server only listens on `127.0.0.1`: it is reached through your reverse proxy, in HTTPS. A sign-in page protects every page; the session lasts 30 days, and changing the password signs everyone out. After 10 failed attempts from the same visitor, sign-in is refused to that visitor for 15 minutes; the visitor is known by the address your proxy adds to `X-Forwarded-For`, so keep that header in the proxy block. If your proxy adds its own login, turn it off for this address (`auth_basic off;` with nginx).
-- The home page lists the latest dry runs. A dry run can only be applied once (an application that failed, for example while Plex was down, can be applied again), and not once a newer full dry run covering the same libraries exists: apply that one instead.
+- The server only listens on `127.0.0.1`: it is reached through your reverse proxy, in HTTPS. A sign-in page protects every page; the session lasts 30 days, and changing the password signs everyone out. After 10 failed attempts from the same visitor within 15 minutes, sign-in is refused to that visitor for a while; the visitor is known by the address your proxy adds to `X-Forwarded-For`, so keep that header in the proxy block. After 50 failed attempts within 15 minutes from all visitors together, sign-in is refused to everyone for a while (open sessions keep working). If your proxy adds its own login, turn it off for this address (`auth_basic off;` with nginx).
+- The home page lists the latest dry runs. A dry run can only be applied once (an application that failed, for example while Plex was down, can be applied again), and not once a newer dry run replaces it (a full one covering the same libraries, or one proposing all the same changes): apply that one instead.
 - The notifications link to the page on the server (`REVIEW_URL`) instead of the file path.
 
 ### Ignore list
@@ -332,7 +332,7 @@ The wizard writes this file and makes it readable by you only, because it contai
 |---|---|---|
 | `PLEX_URL` | **Local** address of the Plex server | `http://192.168.1.100:32400` |
 | `PLEX_TOKEN` | Your Plex token | |
-| `PLEX_LIBRARIES` | Libraries to process, comma-separated | `Movies,TV Shows,Anime` |
+| `PLEX_LIBRARIES` | Libraries to process, comma-separated | `Movies,TV Shows` |
 | `PLEX_LANGUAGES` | Languages in order of preference. `auto`: each library's own language, then English | `auto`, or e.g. `fr-FR,en-US` for every library |
 | `PLEX_POSTERS` | `yes`: also replace [Quebec posters](#quebec-posters) | `no` |
 | `NOTIFY_URLS` | [Webhooks](#notifications) for `--notify`, comma-separated | |
@@ -350,6 +350,8 @@ A variable set when launching the script takes precedence over `config.env`. For
 ```bash
 PLEX_LIBRARIES="Movies" .venv/bin/python plex-smart-logo-updater.py
 ```
+
+To use another settings file, set `PLEX_CONFIG` to its path (it is read by the script, the wizard and the review server).
 
 ### Options
 
@@ -374,7 +376,7 @@ PLEX_LIBRARIES="Movies" .venv/bin/python plex-smart-logo-updater.py
 
 Be careful with `--replace`: on TMDB, a "French" logo is sometimes the Quebec version, and the OCR does not always catch it. That is why, by default, the script only replaces logos detected as Quebec ones.
 
-When applying, the script waits 2 s after each change and 10 s every 10 changes, to spare the server. Temporary errors (429, 5xx) are retried up to 4 times.
+When applying, the script waits 2 s after each change and 10 s every 10 changes, to spare the server. Temporary errors (429, 5xx) are retried up to 4 times, except uploads, which are never sent twice.
 
 ## How it works
 
@@ -386,7 +388,7 @@ A title that already has a logo keeps it, unless that logo is a Quebec one. A lo
 
 ### Quebec logo detection
 
-This only applies to French libraries. When the French (fr-FR) and Quebec (fr-CA) titles given by Plex differ, the script **reads the text on the logo** (OCR) and compares it with the French, Quebec and original titles.
+This only applies to French libraries: those whose first logo language is French, other than Quebec French (with a fixed `PLEX_LANGUAGES` such as `fr-FR,en-US`, every library). When the French (fr-FR) and Quebec (fr-CA) titles given by Plex differ, the script **reads the text on the logo** (OCR) and compares it with the French, Quebec and original titles.
 
 - **A Quebec logo set by Plex is replaced** with the best non-Quebec logo: the one closest to the full French title, otherwise to the original title. When several are equally close, it prefers, in this order: a logo without extra text (actor names, taglines; "Marvel Studios", "Disney"… are allowed), one in the same style as the replaced logo (colored or white), the one Plex recommends, then the largest one.
 - **A Quebec logo is never added.** If Plex recommends one, the script looks for another.
@@ -416,7 +418,7 @@ This check is optional: turn it on with `--posters`, or `PLEX_POSTERS=yes` (the 
 
 ## Logs
 
-Each run creates a folder in `logs/` named after the date, time and mode: `simulation` for a dry run, `application` for a run with `--apply`.
+Each run creates a folder in `logs/` named after the date, time and mode: `simulation` for a dry run, `application` for a run with `--apply`, `undo-simulation` and `undo` for [`--undo`](#undoing-an-application).
 
 ```
 logs/
@@ -494,7 +496,7 @@ The OCR does not always read perfectly ("TRAIT" instead of "TRAIN"), but the com
 
 ## Tests
 
-The tests are built from real cases (*Edge of Tomorrow*, *Bullet Train*, *The Banker*, *Captain America*, *Avatar*…). They cover the Quebec detection, posters, notifications, the ignore list and the setup wizard, and run without a Plex server or the OCR engine:
+The tests are built from real cases (*Edge of Tomorrow*, *Bullet Train*, *The Banker*, *Captain America*, *Avatar*…). They cover the Quebec detection, posters, notifications, the ignore list, the setup wizard and the review server, and run without a Plex server or the OCR engine:
 
 ```bash
 .venv/bin/pip install pytest
