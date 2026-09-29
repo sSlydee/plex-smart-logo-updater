@@ -43,10 +43,15 @@ def write(folder, name, data):
     os.replace(tmp, os.path.join(folder, name))
 
 
-def write_run_info(folder, targeted, libraries, complete):
-    """run.json: targeted = limited to some titles (Tautulli, --rating-key, a choices file)."""
+def write_run_info(folder, targeted, libraries, complete, options=None):
+    """
+    run.json: targeted = limited to some titles (Tautulli, --rating-key, a choices file);
+    options = the planning options of the run, reused when its choices are applied.
+    """
     info = read(folder, RUN_FILE) or {"started": now()}
     info.update(targeted=bool(targeted), libraries=sorted(libraries), complete=bool(complete))
+    if options is not None:
+        info["options"] = options
     if complete:
         info["finished"] = now()
     try:

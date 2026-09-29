@@ -641,3 +641,23 @@ def test_unignore_of_an_unknown_title_fails(main, monkeypatch, tmp_path):
     import argparse
     monkeypatch.setattr(main, "IGNORE_PATH", str(tmp_path / "ignored.json"))
     assert main.manage_ignore(argparse.Namespace(ignore=None, unignore=["Nope"], list_ignored=False)) is False
+
+
+def test_application_reuses_the_dry_run_options(main, monkeypatch, tmp_path):
+    """Regression: the Apply button ran without the dry run's --replace/--posters/--fix-locked-quebec, so approved
+    changes were planned differently (kept, locked, posters skipped) and dropped, yet marked applied."""
+    import runstate
+    dry = tmp_path / "logs" / "2026-01-01_00h00m00_simulation"
+    dry.mkdir(parents=True)
+    runstate.write_run_info(str(dry), False, ["Films"], True, options={"replace": True, "posters": True})
+    (dry / "choices.json").write_text(json.dumps({"format": "plex-smart-logo-updater/choices-v1", "decisions": {}}))
+
+    def refuse(*a, **k):
+        raise ConnectionError("refused")
+    monkeypatch.setattr(main, "LOGS_DIR", str(tmp_path / "logs"))
+    monkeypatch.setattr(main, "PlexServer", refuse)
+    monkeypatch.setattr(main, "HEALTHCHECK_URL", "")
+    monkeypatch.setattr(main, "CHECK_POSTERS", False)
+    opts = run_options(choices=str(dry / "choices.json"))
+    main.run(opts)
+    assert opts.replace is True and opts.posters is True and opts.fix_locked_quebec is False

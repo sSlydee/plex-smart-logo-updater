@@ -1330,9 +1330,19 @@ def forget_retries(keys, path=None):
             pass
 
 
+# Options that change what a run proposes: an application of a dry run's choices reuses them,
+# otherwise an approved change could be planned differently (kept, locked, posters skipped)
+PLANNING_OPTIONS = ("replace", "include_locked", "fix_locked_quebec", "posters")
+
+
 def run(opts):
     """Returns OK, ERRORS (some titles failed) or STOPPED (Plex unreachable, token rejected)."""
     start = time.time()
+    if opts.choices:
+        dry_run = runstate.read(os.path.dirname(os.path.abspath(opts.choices)), runstate.RUN_FILE) or {}
+        for flag, value in (dry_run.get("options") or {}).items():
+            if flag in PLANNING_OPTIONS and value:
+                setattr(opts, flag, True)
     opts.posters = getattr(opts, "posters", False) or CHECK_POSTERS
     mode = "application" if opts.apply else "simulation"
     cats = categories_for(opts)
@@ -1344,7 +1354,8 @@ def run(opts):
     prune_logs(keep=keep)
     # run.json: lets review_server.py tell a complete full run from a targeted or interrupted one
     targeted = bool(opts.rating_keys or opts.choices)
-    runstate.write_run_info(run_dir, targeted, TARGET_LIBRARIES, complete=False)
+    runstate.write_run_info(run_dir, targeted, TARGET_LIBRARIES, complete=False,
+                            options={flag: bool(getattr(opts, flag, False)) for flag in PLANNING_OPTIONS})
     summary = Log(os.path.join(run_dir, "_summary.txt"))
 
     ctx = Context()
