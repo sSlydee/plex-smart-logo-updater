@@ -55,6 +55,27 @@ def write_run_info(folder, targeted, libraries, complete):
         pass
 
 
+SCRIPT_NAME = "plex-smart-logo-updater.py"
+
+
+def application_running(pid):
+    """True while the recorded application still runs (not another process that reused its PID)."""
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    if not os.path.isdir("/proc"):
+        return True  # no /proc (not Linux): the signal check is all we have
+    try:
+        with open(f"/proc/{pid}/cmdline", "rb") as f:
+            cmdline = f.read()
+    except OSError:
+        return False
+    return b"--apply" in cmdline and SCRIPT_NAME.encode() in cmdline
+
+
 def mark_applied(dry_run_folder, application_folder, exit_code=0):
     """
     Records that a dry run's choices were applied from the command line (unless already
@@ -64,10 +85,16 @@ def mark_applied(dry_run_folder, application_folder, exit_code=0):
     if not is_dry_run_folder(dry_run_folder):
         return
     current = read(dry_run_folder, APPLIED_FILE)
-    # Kept: an application started from the review server (running, or recorded as a success);
-    # replaced: a failed one, so a successful retry from the command line shows as applied
-    if current is not None and current.get("exit") in (None, 0):
-        return
+    # Kept: a recorded success, or another application still running (the review server records
+    # its end). Replaced: a failed one (a successful retry shows as applied), one whose process
+    # is gone (killed by a restart), and this very process (started by a review server that
+    # restarted meanwhile, so nobody else will record its end)
+    if current is not None:
+        pid = current.get("pid")
+        if current.get("exit") == 0:
+            return
+        if current.get("exit") is None and pid != os.getpid() and application_running(pid):
+            return
     try:
         write(dry_run_folder, APPLIED_FILE, {"started": now(), "finished": now(), "exit": exit_code, "pid": None,
                                              "application": os.path.basename(os.path.normpath(application_folder))})

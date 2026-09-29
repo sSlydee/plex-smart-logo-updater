@@ -282,21 +282,7 @@ def status(folder):
 
 
 def _alive(pid):
-    """True while the recorded application still runs (not another process that reused its PID)."""
-    if not pid:
-        return False
-    try:
-        os.kill(pid, 0)
-    except OSError:
-        return False
-    if not os.path.isdir("/proc"):
-        return True  # no /proc (not Linux): the signal check is all we have
-    try:
-        with open(f"/proc/{pid}/cmdline", "rb") as f:
-            cmdline = f.read()
-    except OSError:
-        return False
-    return b"--apply" in cmdline and os.path.basename(SCRIPT).encode() in cmdline
+    return runstate.application_running(pid)
 
 
 def start_apply(folder, choices):

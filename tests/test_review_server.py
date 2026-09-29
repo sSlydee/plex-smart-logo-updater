@@ -379,9 +379,17 @@ def test_command_line_retry_replaces_a_failed_state(main, tmp_path):
     (folder / "applied.json").write_text(json.dumps({"exit": 2, "pid": None}))
     main.mark_applied(str(folder / "choices.json"), str(tmp_path / "x_application"), main.OK)
     assert json.loads((folder / "applied.json").read_text())["exit"] == 0
-    (folder / "applied.json").write_text(json.dumps({"exit": None, "pid": 123}))  # being applied: kept
-    main.mark_applied(str(folder / "choices.json"), str(tmp_path / "x_application"), main.OK)
-    assert json.loads((folder / "applied.json").read_text())["exit"] is None
+    # being applied by another live process: kept
+    import subprocess
+    live = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)",
+                             "plex-smart-logo-updater.py", "--apply"])
+    try:
+        (folder / "applied.json").write_text(json.dumps({"exit": None, "pid": live.pid}))
+        main.mark_applied(str(folder / "choices.json"), str(tmp_path / "x_application"), main.OK)
+        assert json.loads((folder / "applied.json").read_text())["exit"] is None
+    finally:
+        live.kill()
+        live.wait()
 
 
 def test_each_sign_in_gets_its_own_session(server):
@@ -402,3 +410,20 @@ def test_next_with_a_final_line_feed_is_refused(server):
     assert not rs.NEXT_PATH.match(f"run/{RUN}/\n")
     status, headers, _ = sign_in(base, next_path=f"run/{RUN}/\n")
     assert status == 303 and headers["Location"] == "./"
+
+
+def test_command_line_retry_replaces_a_dead_application(main, tmp_path):
+    """Regression: an application killed by a restart stayed 'running' in applied.json; a successful retry could not record itself."""
+    folder = tmp_path / RUN
+    folder.mkdir()
+    (folder / "applied.json").write_text(json.dumps({"exit": None, "pid": 999999999}))
+    main.mark_applied(str(folder / "choices.json"), str(tmp_path / "x_application"), main.OK)
+    assert json.loads((folder / "applied.json").read_text())["exit"] == 0
+
+
+def test_application_records_itself_after_a_server_restart(main, tmp_path):
+    folder = tmp_path / RUN
+    folder.mkdir()
+    (folder / "applied.json").write_text(json.dumps({"exit": None, "pid": os.getpid()}))
+    main.mark_applied(str(folder / "choices.json"), str(tmp_path / "x_application"), main.ERRORS)
+    assert json.loads((folder / "applied.json").read_text())["exit"] == main.ERRORS
