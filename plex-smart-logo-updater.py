@@ -1312,6 +1312,24 @@ def requeue(keys, path=None):
     return kept
 
 
+def forget_retries(keys, path=None):
+    """Titles processed: their requeue count starts again from zero at the next failure."""
+    counts_path = (path or QUEUE_PATH) + ".retries.json"
+    try:
+        with open(counts_path, encoding="utf-8") as f:
+            counts = json.load(f)
+    except (OSError, ValueError):
+        return
+    if any(k in counts for k in keys):
+        for k in keys:
+            counts.pop(k, None)
+        try:
+            with open(counts_path, "w", encoding="utf-8") as f:
+                json.dump(counts, f)
+        except OSError:
+            pass
+
+
 def run(opts):
     """Returns OK, ERRORS (some titles failed) or STOPPED (Plex unreachable, token rejected)."""
     start = time.time()
@@ -1897,8 +1915,11 @@ if __name__ == "__main__":
                 outcome = run(options)
                 if outcome == STOPPED and queued:
                     requeue(queued)  # Plex unreachable: try these titles again next time
-                elif queued and getattr(options, "unprocessed", None):
-                    requeue([k for k in queued if k in options.unprocessed])
+                elif queued:
+                    unprocessed = getattr(options, "unprocessed", None) or []
+                    if unprocessed:
+                        requeue([k for k in queued if k in unprocessed])
+                    forget_retries([k for k in queued if k not in unprocessed])
         except Exception as crash:
             if queued:
                 requeue(queued)

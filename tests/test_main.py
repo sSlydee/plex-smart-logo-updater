@@ -624,3 +624,14 @@ def test_timeouts_with_changing_texts_are_notified_once(main, monkeypatch, tmp_p
         error = TimeoutError(f"ConnectTimeoutError(<HTTPConnection(host='10.0.0.1', port=32400) at {address}>)")
         main.stop(argparse.Namespace(notify=True), summary, error)
     assert sender.calls == 1
+
+
+def test_retry_count_restarts_once_a_title_was_processed(main, tmp_path):
+    """Regression: requeue counts were never reset, so a title that used its retries in one outage was dropped at
+    its first failure in any later outage."""
+    queue = str(tmp_path / "queue.txt")
+    for _ in range(main.MAX_REQUEUE):
+        main.requeue(["123"], queue)
+        main.take_queue(queue)
+    main.forget_retries(["123"], queue)  # processed fine later on
+    assert main.requeue(["123"], queue) == ["123"]
