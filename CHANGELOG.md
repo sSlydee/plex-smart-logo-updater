@@ -3,6 +3,28 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.7.0] - 2026-09-29
+
+### Security
+- The Plex token is never written in logs, `_summary.txt`, `cron.log`, notifications, the application output shown by the review server or the Uptime Kuma message (a failed image download or a 401 used to quote it).
+- Discord, Bark and Uptime Kuma tokens are hidden in connection error messages too.
+- Review server: the sign-in redirect (`next=`) refuses CR/LF and a final line feed (header injection); sessions carry a random id and are signed with a random server secret (`logs/.review-secret`); oversized session expiries are refused; the sign-in failure table is locked and bounded; the cookie is `Secure` when `REVIEW_URL` is https. The documented nginx block now sends `X-Forwarded-For` and `X-Forwarded-Proto`.
+
+### Fixed
+- The review page's Apply (and the suggested `--apply --choices` command) reuses the dry run's `--replace`, `--include-locked`, `--fix-locked-quebec` and `--posters`: approved changes were planned again without them and could be skipped while the dry run was marked applied.
+- Applications started from the page read the current `config.env` instead of the one loaded when the review server started (e.g. an old token).
+- Pruning never deletes the dry run being applied, the current run, a running application, or the latest full dry run still waiting for review.
+- Titles Plex could not return are errors and are requeued (at most `MAX_REQUEUE` = 6 times, `RETRY_DELAY` = 5 min apart) instead of being dropped from the Tautulli queue; the requeue count is reset once a title is processed; the queue file is always next to the script.
+- Notification states (titles to handle by hand, failures) are only remembered once a notification went out.
+- A connection loss while reading libraries stops the run cleanly (with an alert) instead of crashing.
+- Application state: a successful command-line retry replaces a failed state; a killed application's "running" state is replaced; an application no longer ends its own state early; a failed end record never leaves the page "Applying…" forever.
+- `--ignore`/`--unignore` wait for a running run; the OCR cache is merged into the file and saved under the run lock.
+- `config.env.example` lists the review server settings; READMEs say a failed application can be applied again.
+
+### Changed
+- Runs, `--undo`, `--ignore` and `--unignore` exit with an error code when they stop or fail (0 only when everything went fine).
+- A lasting failure (Plex down, token rejected) is notified once, and again only after Plex answered; for the Tautulli queue, only a title given up after all retries is notified.
+
 ## [1.6.4] - 2026-09-29
 
 ### Fixed
