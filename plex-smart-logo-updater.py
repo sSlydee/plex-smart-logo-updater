@@ -1274,10 +1274,34 @@ def review_link(run_dir):
 OK, ERRORS, STOPPED = 0, 2, 1
 
 
+MAX_REQUEUE = 6  # retries per title (every 5 minutes): then the weekly run catches it
+
+
 def requeue(keys, path=None):
-    """Puts ratingKeys back in the Tautulli queue (the run that took them could not process them)."""
-    with open(path or QUEUE_PATH, "a", encoding="utf-8") as f:
-        f.write("".join(f"{k}\n" for k in keys))
+    """
+    Puts ratingKeys back in the Tautulli queue (the run that took them could not process
+    them), at most MAX_REQUEUE times per title, so a title Plex always fails on does not
+    come back (with an error notification) every 5 minutes forever.
+    """
+    path = path or QUEUE_PATH
+    counts_path = path + ".retries.json"
+    try:
+        with open(counts_path, encoding="utf-8") as f:
+            counts = json.load(f)
+    except (OSError, ValueError):
+        counts = {}
+    kept = [k for k in keys if counts.get(k, 0) < MAX_REQUEUE]
+    for k in keys:
+        counts[k] = counts.get(k, 0) + 1
+    try:
+        with open(counts_path, "w", encoding="utf-8") as f:
+            json.dump(counts, f)
+    except OSError:
+        pass
+    if kept:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("".join(f"{k}\n" for k in kept))
+    return kept
 
 
 def run(opts):
@@ -1326,12 +1350,15 @@ def run(opts):
     per_library = []
 
     selected = None
+    unread = []  # keys Plex could not return: counted as errors, put back in the Tautulli queue
     if opts.rating_keys:
-        selected = select_titles(plex, opts.rating_keys, summary)
+        selected = select_titles(plex, opts.rating_keys, summary, unread)
     elif ctx.choices is not None:
         # Only the titles of the choices file can change: the others are not even looked at
         keys = sorted({k.split(":")[0] for k in ctx.choices})
-        selected = select_titles(plex, keys, summary) if keys else {}
+        selected = select_titles(plex, keys, summary, unread) if keys else {}
+    totals["error"].extend(f"ratingKey {key}: could not be read from Plex" for key in unread)
+    opts.unprocessed = unread
 
     for name in TARGET_LIBRARIES:
         section = sections.get(name)
@@ -1443,12 +1470,14 @@ def run(opts):
     return ERRORS if totals["error"] else OK
 
 
-def select_titles(plex, rating_keys, summary):
+def select_titles(plex, rating_keys, summary, failed=None):
     """
     Titles to process for --rating-key, grouped by library: {library: [items]}.
-    An episode or a season counts as its show; unknown keys and titles outside the
-    configured libraries are reported and skipped.
+    An episode or a season counts as its show; deleted titles and titles outside the
+    configured libraries are reported and skipped. Keys Plex could not return
+    (server error, timeout) are added to failed: they were not processed.
     """
+    from plexapi.exceptions import NotFound
     selected, seen = {}, set()
     keys = [k for value in rating_keys for k in re.split(r"[\s,]+", value) if k]
     for key in keys:
@@ -1458,8 +1487,13 @@ def select_titles(plex, rating_keys, summary):
                 item = plex.fetchItem(int(item.grandparentRatingKey))
             elif item.type == "season":
                 item = plex.fetchItem(int(item.parentRatingKey))
+        except NotFound:
+            summary(f"  [i] ratingKey {key}: no longer in Plex, skipped")
+            continue
         except Exception as e:
-            summary(redact(f"  [!] ratingKey {key}: {e}"))
+            summary(redact(f"  [!] ratingKey {key}: could not be read from Plex: {e}"))
+            if failed is not None:
+                failed.append(key)
             continue
         if item.type not in ("movie", "show"):
             summary(f"  [!] ratingKey {key}: {item.type} titles have no logo, skipped")
@@ -1831,6 +1865,8 @@ if __name__ == "__main__":
                 outcome = run(options)
                 if outcome == STOPPED and queued:
                     requeue(queued)  # Plex unreachable: try these titles again next time
+                elif queued and getattr(options, "unprocessed", None):
+                    requeue([k for k in queued if k in options.unprocessed])
         except Exception as crash:
             if queued:
                 requeue(queued)

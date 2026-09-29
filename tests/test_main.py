@@ -512,3 +512,32 @@ def test_ocr_cache_save_keeps_other_runs_readings(main, tmp_path):
     waiting.save()
     saved = json.loads(open(path).read())
     assert set(saved) == {"logo-A", "logo-B"}
+
+
+def test_titles_plex_could_not_return_are_errors_and_requeued(main, monkeypatch, tmp_path):
+    """Regression: a queued title whose fetch failed (503) was skipped silently: exit 0, lost from the queue."""
+    class Plex:
+        friendlyName, version = "Fake", "1"
+
+        class library:
+            @staticmethod
+            def sections():
+                return []
+
+        def fetchItem(self, key):
+            raise RuntimeError("503 Server Error")
+
+    monkeypatch.setattr(main, "PlexServer", lambda *a, **k: Plex())
+    monkeypatch.setattr(main, "HEALTHCHECK_URL", "")
+    opts = run_options(apply=False, rating_keys=["555"])
+    assert main.run(opts) == main.ERRORS
+    assert opts.unprocessed == ["555"]
+
+
+def test_requeue_gives_up_after_a_few_tries(main, tmp_path):
+    queue = str(tmp_path / "queue.txt")
+    for _ in range(main.MAX_REQUEUE):
+        assert main.requeue(["9"], queue) == ["9"]
+        main.take_queue(queue)
+    assert main.requeue(["9"], queue) == []
+    assert main.take_queue(queue) == []
