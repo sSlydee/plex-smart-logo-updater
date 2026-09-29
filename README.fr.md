@@ -39,7 +39,7 @@ Basé sur [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-lo
 
 ## Démarrage rapide
 
-Pour les habitués du terminal. Linux (ou macOS, ou WSL sous Windows), Python 3.8+ et git :
+Pour les habitués du terminal. Linux (ou macOS, ou WSL sous Windows), Python 3.8 à 3.12 et git :
 
 ```bash
 git clone https://github.com/sSlydee/plex-smart-logo-updater.git
@@ -57,7 +57,7 @@ Vous débutez avec GitHub ou le terminal ? Ce guide vous amène de zéro à votr
 ### Ce qu'il vous faut
 
 - **Une machine qui accède à votre serveur Plex** : le serveur Plex lui-même, une seedbox, un NAS, un VPS… Le script est testé sous Linux. macOS devrait fonctionner, et sous Windows il faut passer par [WSL](https://learn.microsoft.com/fr-fr/windows/wsl/install).
-- **Python 3.8 ou plus récent** et **git**.
+- **Python 3.8 à 3.12** et **git**. Le moteur OCR ne s'installe pas encore sous Python 3.13 ou plus récent.
 - **Votre token Plex** ([comment le trouver](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)).
 - Environ **500 Mo d'espace disque** pour l'environnement Python. Le moteur OCR en est la plus grosse partie.
 
@@ -76,7 +76,7 @@ python3 --version
 git --version
 ```
 
-Chaque commande doit afficher un numéro de version, et Python doit être en 3.8 ou plus. S'il en manque un, installez-le avec le gestionnaire de paquets de votre système (sous Debian/Ubuntu : `sudo apt install python3 python3-venv git`) ou demandez à votre hébergeur.
+Chaque commande doit afficher un numéro de version, et Python doit être entre 3.8 et 3.12. Si `python3` est plus récent, vérifiez si une version plus ancienne est aussi installée (`python3.12 --version`, `python3.11 --version`…) : vous la donnerez à l'installateur. S'il en manque un, installez-le avec le gestionnaire de paquets de votre système (sous Debian/Ubuntu : `sudo apt install python3 python3-venv git`) ou demandez à votre hébergeur.
 
 ### 2. Télécharger le projet
 
@@ -110,7 +110,7 @@ Appuyez sur Entrée pour garder la valeur affichée entre `[crochets]`.
 3. **Bibliothèques** : les numéros des bibliothèques à traiter, séparés par des virgules (ex. `1,3,4`), ou `all`.
 4. **Langue des logos** : gardez `auto` (la langue de chaque bibliothèque, puis l'anglais). L'assistant demande ensuite s'il faut aussi remplacer les [affiches québécoises](#affiches-québécoises).
 5. **Notifications** : facultatives. Répondez `n` pour ne pas ajouter de webhook, puis laissez vide l'URL Uptime Kuma.
-6. **Analyse automatique** : Entrée programme une simulation chaque semaine. Choisissez `never` (tapez `1`) si vous préférez commencer à la main ; vous pourrez l'ajouter plus tard.
+6. **Analyse automatique** : appuyer trois fois sur Entrée programme une simulation chaque lundi à 9 h (l'assistant demande ensuite l'heure et le jour). Choisissez `never` (tapez `1`) si vous préférez commencer à la main ; vous pourrez l'ajouter plus tard.
 
 Vos réponses sont enregistrées dans `config.env`, un fichier lisible par vous seul.
 
@@ -144,6 +144,13 @@ cd ~
 rm -rf plex-smart-logo-updater
 ```
 
+Si vous avez installé le [serveur de contrôle](#contrôler-et-appliquer-depuis-le-navigateur-facultatif), arrêtez-le et supprimez son service, puis retirez son bloc de votre reverse proxy :
+
+```bash
+systemctl --user disable --now plex-smart-logo-review.service
+rm ~/.config/systemd/user/plex-smart-logo-review.service
+```
+
 Si vous avez installé le hook Tautulli, supprimez aussi son agent Script dans Tautulli. Les logos et affiches déjà posés dans Plex restent en place. Pour remettre les précédents, [annulez](#annuler-une-application) vos applications avant de supprimer le dossier.
 
 ## Utilisation au quotidien
@@ -156,7 +163,7 @@ Chaque changement passe par trois étapes : une **simulation** qui génère une 
 .venv/bin/python plex-smart-logo-updater.py --html
 ```
 
-Chaque lancement crée un dossier dans `logs/`, nommé d'après la date et le mode (`2026-09-23_18h20m05_simulation` pour une simulation). Avec `--html`, la page de contrôle `review.html` y est générée.
+Chaque lancement crée un dossier dans `logs/`, nommé d'après la date et le mode (`2026-09-23_18h20m05_simulation` pour une simulation). Avec `--html`, la page de contrôle `review.html` y est générée lorsqu'il y a quelque chose à contrôler.
 
 ### 2. Contrôle
 
@@ -179,7 +186,7 @@ scp choices.json votre_utilisateur@adresse_du_serveur:plex-smart-logo-updater/lo
 
 ### 3. Application
 
-Déposez `choices.json` dans le dossier de la simulation, puis :
+Déposez `choices.json` dans le dossier de la simulation (le script y relit les options de la simulation et la marque comme appliquée), puis lancez la commande affichée à la fin du résumé de la simulation :
 
 ```bash
 .venv/bin/python plex-smart-logo-updater.py --apply --choices logs/<dossier de la simulation>/choices.json
@@ -211,9 +218,11 @@ location /logos/ {
 }
 ```
 
-- Le serveur n'écoute que sur `127.0.0.1` : on y accède par votre reverse proxy, en HTTPS. Une page de connexion protège chaque page ; la session dure 30 jours, et changer le mot de passe déconnecte tout le monde. Après 10 essais ratés d'un même visiteur, la connexion lui est refusée pendant 15 minutes ; le visiteur est reconnu par l'adresse que votre proxy ajoute à `X-Forwarded-For`, gardez donc cet en-tête dans le bloc du proxy. Si votre proxy ajoute sa propre authentification, désactivez-la pour cette adresse (`auth_basic off;` avec nginx).
-- La page d'accueil liste les dernières simulations. Une simulation ne peut être appliquée qu'une fois (une application qui a échoué, par exemple pendant une panne de Plex, peut être relancée), et plus du tout quand une simulation complète plus récente couvrant les mêmes bibliothèques existe : appliquez plutôt celle-ci.
+- Le serveur n'écoute que sur `127.0.0.1` : on y accède par votre reverse proxy, en HTTPS. Une page de connexion protège chaque page ; la session dure 30 jours, et changer le mot de passe déconnecte tout le monde. Après 10 essais ratés d'un même visiteur en 15 minutes, la connexion lui est refusée pendant un moment ; le visiteur est reconnu par l'adresse que votre proxy ajoute à `X-Forwarded-For`, gardez donc cet en-tête dans le bloc du proxy. Après 50 essais ratés en 15 minutes, tous visiteurs confondus, la connexion est refusée à tout le monde pendant un moment (les sessions ouvertes continuent de fonctionner). Si votre proxy ajoute sa propre authentification, désactivez-la pour cette adresse (`auth_basic off;` avec nginx).
+- La page d'accueil liste les dernières simulations. Une simulation ne peut être appliquée qu'une fois (une application qui a échoué, par exemple pendant une panne de Plex, peut être relancée), et plus du tout quand une simulation plus récente la remplace (une simulation complète couvrant les mêmes bibliothèques, ou une simulation proposant exactement les mêmes changements) : appliquez plutôt celle-ci.
 - Les notifications pointent vers la page sur le serveur (`REVIEW_URL`) au lieu du chemin du fichier.
+- Le service est un service utilisateur systemd (Linux). Sur certains serveurs, les services utilisateur s'arrêtent à la déconnexion : dans ce cas, `loginctl enable-linger` (ou votre hébergeur) les maintient actifs.
+- Pour changer l'identifiant, le mot de passe, le port ou l'adresse, relancez `configure.py --review-server` : il redémarre le service. Pour vérifier le service : `systemctl --user status plex-smart-logo-review.service`.
 
 ### Titres ignorés
 
@@ -226,7 +235,7 @@ Certains titres doivent rester tels quels : un changement que vous avez refusé,
   .venv/bin/python plex-smart-logo-updater.py --ignore "Films/Edge of Tomorrow"
   ```
 
-  Le titre peut être donné sous la forme `Bibliothèque/Titre`, `Titre`, `Titre (année)` ou un ratingKey Plex. Si plusieurs titres correspondent, le script les liste pour que vous précisiez.
+  Le titre peut être donné sous la forme `Bibliothèque/Titre`, `Titre`, `Titre (année)` ou un ratingKey Plex (le numéro du titre dans Plex : dans Plex Web, le dernier nombre de l'adresse de la page du titre, après `metadata%2F`). Si plusieurs titres correspondent, le script les liste avec leur ratingKey pour que vous précisiez.
 - **Retirez un titre** avec `--unignore "Edge of Tomorrow"`, et **affichez la liste** avec `--list-ignored`.
 
 La liste est enregistrée dans `ignored.json`, à côté du script.
@@ -292,12 +301,13 @@ Quelques précisions :
 - Une saison importée épisode par épisode ne vous inonde pas : chaque changement en attente n'est notifié qu'une fois. L'analyse automatique envoie quand même un rappel tant qu'un changement attend votre validation.
 - Les lancements simultanés s'attendent les uns les autres.
 - Si Plex n'a pas encore récupéré les images d'un titre au moment de la vérification, l'analyse automatique suivante le rattrape.
+- Si Plex est injoignable, les titres de la file sont réessayés au moins 5 minutes plus tard, jusqu'à 6 fois : au traitement suivant de la file (toutes les 5 minutes avec `configure.py --tautulli`, sinon au prochain appel du hook). L'analyse automatique rattrape le reste.
 
 Pour traiter des titres à la main : `--rating-key 12345`, ou `--process-queue` pour la file d'attente.
 
 ### Surveillance avec Uptime Kuma
 
-Avec `HEALTHCHECK_URL`, chaque lancement envoie un signal à un service de surveillance. Il indique **up** quand tout s'est bien passé, et **down** avec la raison en cas d'échec (token refusé, serveur injoignable, plantage). Si l'analyse automatique s'arrête complètement (cron cassé, machine éteinte…), l'absence de signal vous prévient.
+Avec `HEALTHCHECK_URL`, chaque analyse (automatique, à la main ou depuis la file Tautulli) envoie un signal à un service de surveillance. Il indique **up** quand tout s'est bien passé, et **down** avec la raison en cas d'échec (token refusé, serveur injoignable, plantage). Si l'analyse automatique s'arrête complètement (cron cassé, machine éteinte…), l'absence de signal vous prévient.
 
 Dans [Uptime Kuma](https://github.com/louislam/uptime-kuma), allez dans **Add New Monitor > Push**. Copiez l'URL de push dans `HEALTHCHECK_URL`, ou donnez-la à `configure.py --notifications`. Réglez ensuite le **heartbeat interval** un peu au-dessus de la fréquence de votre cron, par exemple 8 jours (691200 s) pour une analyse hebdomadaire. Une URL [healthchecks.io](https://healthchecks.io/) fonctionne aussi.
 
@@ -334,7 +344,7 @@ L'assistant écrit ce fichier et le rend lisible par vous seul, parce qu'il cont
 |---|---|---|
 | `PLEX_URL` | Adresse **locale** du serveur Plex | `http://192.168.1.100:32400` |
 | `PLEX_TOKEN` | Votre token Plex | |
-| `PLEX_LIBRARIES` | Bibliothèques à traiter, séparées par des virgules | `Films,Séries TV,Animés` |
+| `PLEX_LIBRARIES` | Bibliothèques à traiter, séparées par des virgules | `Movies,TV Shows` par défaut, par ex. `Films,Séries TV` |
 | `PLEX_LANGUAGES` | Langues par ordre de préférence. `auto` : la langue de chaque bibliothèque, puis l'anglais | `auto`, ou par exemple `fr-FR,en-US` pour toutes les bibliothèques |
 | `PLEX_POSTERS` | `yes` : remplace aussi les [affiches québécoises](#affiches-québécoises) | `no` |
 | `NOTIFY_URLS` | [Webhooks](#notifications) pour `--notify`, séparés par des virgules | |
@@ -352,6 +362,8 @@ Une variable donnée au lancement est prioritaire sur `config.env`. Par exemple,
 ```bash
 PLEX_LIBRARIES="Films" .venv/bin/python plex-smart-logo-updater.py
 ```
+
+Pour utiliser un autre fichier de réglages, indiquez son chemin dans `PLEX_CONFIG` (il est lu par le script, l'assistant et le serveur de contrôle). Les lignes cron, le hook Tautulli et le service du serveur de contrôle ne le transmettent pas : ils utilisent toujours le `config.env` situé à côté du script.
 
 ### Options
 
@@ -376,19 +388,19 @@ PLEX_LIBRARIES="Films" .venv/bin/python plex-smart-logo-updater.py
 
 Attention avec `--replace` : sur TMDB, un logo « français » est parfois la version québécoise, et l'OCR ne la repère pas toujours. C'est pourquoi, par défaut, le script ne remplace que les logos détectés comme québécois.
 
-Pendant une application, le script attend 2 s après chaque changement et 10 s tous les 10 changements, pour ménager le serveur. Les erreurs temporaires (429, 5xx) sont réessayées jusqu'à 4 fois.
+Pendant une application, le script attend 2 s après chaque changement et 10 s tous les 10 changements, pour ménager le serveur. Les erreurs temporaires (429, 5xx) sont réessayées jusqu'à 4 fois, sauf les envois d'images, qui ne sont jamais faits deux fois.
 
 ## Comment ça marche
 
 ### Choix du logo
 
-Pour chaque titre **sans logo**, le script demande au service de métadonnées de Plex (`metadata.provider.plex.tv`, avec votre token) le logo qu'il recommande : d'abord dans la langue de la bibliothèque, puis en anglais. Il cherche ce logo parmi ceux que propose votre serveur (même adresse, ou image identique) et le sélectionne. Il ne le télécharge depuis Internet que si votre serveur ne l'a pas.
+Pour chaque titre **sans logo**, le script demande au service de métadonnées de Plex (`metadata.provider.plex.tv`, avec votre token) le logo qu'il recommande : d'abord dans la langue de la bibliothèque, puis en anglais. Il cherche ce logo parmi ceux que propose votre serveur (même adresse, ou image identique) et le sélectionne. Ce n'est que si votre serveur ne l'a pas que le logo est envoyé à Plex depuis son adresse Internet.
 
 Un titre qui a déjà un logo le garde, sauf si ce logo est québécois. Un champ verrouillé *sans* logo reçoit une proposition comme n'importe quel titre sans logo. Pour le laisser vide, refusez la proposition : le titre rejoint alors les titres ignorés.
 
 ### Détection des logos québécois
 
-Cette détection ne concerne que les bibliothèques françaises. Quand les titres français (fr-FR) et québécois (fr-CA) donnés par Plex diffèrent, le script **lit le texte du logo** (OCR) et le compare aux titres français, québécois et original.
+Cette détection ne concerne que les bibliothèques françaises : celles dont la première langue de logo est le français, hors français du Québec (avec un `PLEX_LANGUAGES` fixe comme `fr-FR,en-US`, toutes les bibliothèques). Quand les titres français (fr-FR) et québécois (fr-CA) donnés par Plex diffèrent, le script **lit le texte du logo** (OCR) et le compare aux titres français, québécois et original.
 
 - **Un logo québécois posé par Plex est remplacé** par le meilleur logo non québécois : le plus proche du titre français complet, sinon du titre original. À ressemblance égale, il préfère, dans l'ordre : un logo sans texte en plus (noms d'acteurs, slogans ; « Marvel Studios », « Disney »… sont acceptés), un logo du même style que celui remplacé (coloré ou blanc), celui que Plex recommande, puis le plus grand.
 - **Un logo québécois n'est jamais ajouté.** Si Plex en recommande un, le script en cherche un autre.
@@ -418,7 +430,7 @@ Cette vérification est facultative : activez-la avec `--posters`, ou `PLEX_POST
 
 ## Logs
 
-Chaque lancement crée un dossier dans `logs/`, nommé d'après la date, l'heure et le mode : `simulation`, ou `application` pour un lancement avec `--apply`.
+Chaque lancement crée un dossier dans `logs/`, nommé d'après la date, l'heure et le mode : `simulation`, `application` pour un lancement avec `--apply`, `undo-simulation` et `undo` pour [`--undo`](#annuler-une-application).
 
 ```
 logs/
@@ -454,6 +466,7 @@ Un titre sans logo, complété avec la recommandation anglaise :
   Current logo     : none
   Plex search      : French: none | English: found
   Recommended logo : English, 618x239 px
+  Image link       : https://…
   Found on Plex    : candidate #3 of 7 (tmdb), same URL
   ==> [TO ADD] English logo 618x239 px
 ```
@@ -479,24 +492,27 @@ L'OCR ne lit pas toujours parfaitement (« TRAIT » au lieu de « TRAIN »), mai
 |---|---|
 | `Permission denied` en lançant `./install.sh` | Lancez `bash install.sh` à la place. |
 | `Python 3.8 or later is required` | Installez un Python plus récent, ou lancez `PYTHON=python3.11 ./install.sh` si plusieurs versions sont installées. |
+| L'installateur s'arrête sur `rapidocr-onnxruntime` (erreur pip) | Votre Python est en 3.13 ou plus récent : supprimez le dossier `.venv` et lancez `PYTHON=python3.12 ./install.sh` (ou 3.8 à 3.11). |
 | `No module named ...` | Lancez le script avec `.venv/bin/python`, pas `python3`. |
 | L'installateur s'arrête avec `The dependencies do not load correctly` | Supprimez le dossier `.venv` et relancez `./install.sh`. Si le problème persiste, ouvrez une issue avec la sortie complète. |
 | `Plex token rejected` | Votre token a changé : `.venv/bin/python configure.py --token`. |
 | `Cannot connect to the Plex server` | Vérifiez l'adresse et le port. Depuis la machine, `curl http://adresse:32400/identity` doit répondre. |
 | `Libraries not found` | Les noms doivent correspondre exactement à Plex : `.venv/bin/python configure.py --libraries`. |
+| L'analyse automatique ne fait rien | Lisez `logs/cron.log`, et vérifiez la ligne avec `crontab -l`. |
+| La page de contrôle ne s'ouvre pas | `systemctl --user status plex-smart-logo-review.service`, puis vérifiez le bloc du reverse proxy. |
 | Un nouveau titre n'est pas traité par le hook Tautulli | Vérifiez que sa bibliothèque est dans `PLEX_LIBRARIES`, et lisez `logs/tautulli.log`. Avec Tautulli dans un conteneur, lancez `configure.py --tautulli`. |
 
 ## Bon à savoir
 
 - Une image choisie par le script devient **verrouillée**, comme un choix manuel : Plex ne la remplace pas lors d'une actualisation, et les analyses suivantes n'y touchent plus.
-- Rien n'est supprimé : l'ancien logo ou l'ancienne affiche reste disponible dans Plex (*Modifier > Logo* ou *Affiche*).
+- Rien n'est supprimé : l'ancien logo ou l'ancienne affiche reste disponible dans Plex (*Modifier > Logo* ou *Affiche*). Seule exception : annuler l'ajout d'un logo à un titre qui n'en avait pas.
 - Seules les images principales des films et séries sont traitées, pas celles des saisons ou des épisodes.
 - L'installateur remplace OpenCV 5, installé avec le moteur OCR, par une version plus ancienne, parce qu'OpenCV 5 plante au chargement sur certaines machines.
 - `config.env`, `ignored.json`, `logs/`, `.venv/` et `.cache-ocr.json` ne doivent pas être publiés (ils sont dans `.gitignore`) : ils contiennent votre token ou la liste de vos titres.
 
 ## Tests
 
-Les tests sont construits à partir de cas réels (*Edge of Tomorrow*, *Bullet Train*, *The Banker*, *Captain America*, *Avatar*…). Ils couvrent la détection québécoise, les affiches, les notifications, les titres ignorés et l'assistant, et fonctionnent sans serveur Plex ni moteur OCR :
+Les tests sont construits à partir de cas réels (*Edge of Tomorrow*, *Bullet Train*, *The Banker*, *Captain America*, *Avatar*…). Ils couvrent la détection québécoise, les affiches, les notifications, les titres ignorés, l'assistant et le serveur de contrôle, et fonctionnent sans serveur Plex ni moteur OCR :
 
 ```bash
 .venv/bin/pip install pytest
