@@ -3,6 +3,11 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.5.2] - 2026-09-29
+
+### Changed
+- Notifications name the titles concerned ("Films > Real Steel (2011): logo to add"), up to 5, instead of only counting them.
+
 ## [1.5.1] - 2026-09-28
 
 ### Fixed
@@ -85,6 +90,7 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.5.2]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.5.2
 [1.5.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.5.1
 [1.5.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.5.0
 [1.4.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.4.0

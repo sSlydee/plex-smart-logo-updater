@@ -61,7 +61,7 @@ import notify as notifier
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-__version__ = "1.5.1"
+__version__ = "1.5.2"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -1466,6 +1466,18 @@ def new_pending_changes(pending, state_path, targeted):
     return new if targeted else dict(pending)
 
 
+def change_titles(totals, applied, limit=5):
+    """Titles of the changes, for the notification: "Films > Real Steel (2011): logo to add"."""
+    kinds = [("add", "logo added" if applied else "logo to add"),
+             ("replace", "Quebec logo replaced" if applied else "Quebec logo to replace"),
+             ("poster_replace", "Quebec poster replaced" if applied else "Quebec poster to replace")]
+    # Entries end with a note in parentheses ("(English)", "(picked by OCR…)"): not needed here
+    items = [f"{entry.rsplit(' (', 1)[0]}: {what}" for key, what in kinds for entry in totals[key]]
+    if len(items) > limit:
+        items = items[:limit] + [f"… and {len(items) - limit} more"]
+    return items
+
+
 def notify(opts, run_dir, totals, page, duration, pending=None):
     """
     Summary sent to the webhooks, only when there is something to do (changes,
@@ -1494,6 +1506,7 @@ def notify(opts, run_dir, totals, page, duration, pending=None):
         if totals["poster_replace"]:
             line += f", {len(totals['poster_replace'])} Quebec poster(s) replaced"
         lines.append(line)
+        lines.extend(change_titles(totals, opts.apply))
     if totals["unverified"]:
         lines.append(f"{len(totals['unverified'])} not verified by OCR, look at them first")
     if new_manual:

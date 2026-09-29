@@ -142,6 +142,16 @@ def test_targeted_run_does_not_forget_reported_titles(main, tmp_path):
     assert main.new_manual_titles(["Films > Happy Birthdead", "Films > X"], state) == []  # next weekly run: quiet
 
 
+def test_notification_names_the_titles(main):
+    totals = main.empty_results()
+    totals["add"] = ["Films > Real Steel (2011) (English)"]
+    totals["poster_replace"] = ["Films > Bad Boys 2 (2003) (picked by OCR, replaces a Quebec poster)"]
+    assert main.change_titles(totals, applied=False) == [
+        "Films > Real Steel (2011): logo to add", "Films > Bad Boys 2 (2003): Quebec poster to replace"]
+    totals["add"] = [f"Films > T{i} (English)" for i in range(7)]
+    assert main.change_titles(totals, applied=True)[-1] == "… and 3 more"
+
+
 def test_retries_skip_non_idempotent_methods(main):
     retry = main.HTTP.get_adapter("https://example.org").max_retries
     assert "POST" not in retry.allowed_methods
