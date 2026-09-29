@@ -383,3 +383,13 @@ def test_requeue_puts_titles_back(main, tmp_path):
     queue = str(tmp_path / "queue.txt")
     main.requeue(["12", "34"], queue)
     assert main.take_queue(queue) == ["12", "34"]
+
+
+def test_a_lasting_failure_is_notified_once(main, tmp_path):
+    """Regression: the Tautulli queue is retried every 5 minutes while Plex is down: one notification, not one per retry."""
+    state = str(tmp_path / "failure.json")
+    message = "Cannot connect to the Plex server: refused"
+    assert main.failure_is_new(message, state) is True
+    assert main.failure_is_new(message, state) is False
+    main.clear_failure(state)  # a run went fine
+    assert main.failure_is_new(message, state) is True

@@ -1407,6 +1407,7 @@ def run(opts):
                      f"{len(totals['error'])} error(s)" if totals["error"]
                      else f"{to_do} change(s) to review" if to_do and not opts.apply
                      else "ok", time.time() - start)
+    clear_failure()
     return ERRORS if totals["error"] else OK
 
 
@@ -1461,10 +1462,39 @@ def stop(opts, summary, error):
     summary(f"  [!] {message}")
     summary(LINE)
     summary.close()
-    if opts.notify and NOTIFY_TARGETS:
+    # While Plex stays down, the Tautulli queue is retried every few minutes: notify the failure once
+    if opts.notify and NOTIFY_TARGETS and failure_is_new(message):
         for kind, err in notifier.send(HTTP, NOTIFY_TARGETS, "Plex logos: run failed", message):
             print(f"Notification {kind}: {'sent' if err is None else 'failed (' + err + ')'}")
     ping_healthcheck(False, message)
+
+
+FAILURE_STATE = os.path.join(LOGS_DIR, ".notified-failure.json")
+
+
+def failure_is_new(message, state_path=None):
+    """True the first time a failure is seen since the last run that went fine (recorded)."""
+    state_path = state_path or FAILURE_STATE
+    try:
+        with open(state_path, encoding="utf-8") as f:
+            if json.load(f) == message:
+                return False
+    except (OSError, ValueError):
+        pass
+    try:
+        with open(state_path, "w", encoding="utf-8") as f:
+            json.dump(message, f)
+    except OSError:
+        pass
+    return True
+
+
+def clear_failure(state_path=None):
+    """A run went fine: the next failure is notified again."""
+    try:
+        os.remove(state_path or FAILURE_STATE)
+    except OSError:
+        pass
 
 
 def new_manual_titles(manual, state_path, targeted=False):
