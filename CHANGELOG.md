@@ -3,6 +3,15 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.6.0] - 2026-09-29
+
+### Added
+- Review server (`review_server.py`, set up with `configure.py --review-server`): the review pages are served behind your reverse proxy with a login, and the **Apply approved changes** button applies them right away. No more `choices.json` to download and copy back. The notifications link to the page on the server (`REVIEW_URL`).
+- A dry run can only be applied once, and not once a newer full dry run exists; an application from the command line marks its dry run as applied.
+
+### Changed
+- `--apply --choices` only looks at the titles of the choices file: applying takes seconds instead of minutes.
+
 ## [1.5.2] - 2026-09-29
 
 ### Changed
@@ -90,6 +99,7 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.6.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.0
 [1.5.2]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.5.2
 [1.5.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.5.1
 [1.5.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.5.0

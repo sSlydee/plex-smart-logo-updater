@@ -28,7 +28,7 @@ Based on [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-log
 
 - [Quick start](#quick-start)
 - [Installation, step by step](#installation-step-by-step)
-- [Everyday use](#everyday-use): dry run, review, apply, ignore list, undo
+- [Everyday use](#everyday-use): dry run, review, apply, review from the browser, ignore list, undo
 - [Automation](#automation): automatic run, notifications, Tautulli, Uptime Kuma
 - [Reference](#reference): setup wizard, settings, options
 - [How it works](#how-it-works): language choice, Quebec detection, posters
@@ -185,7 +185,31 @@ Put `choices.json` in the dry run's folder, then:
 
 Only the approved changes are applied, and the rejected ones go to the [ignore list](#ignore-list). If Plex changed a title since the dry run, the title is left untouched and tagged `[RECHECK]`: run a new dry run.
 
+Only the titles in `choices.json` are looked at, so applying takes a few seconds.
+
 To apply everything without the review page, run `--apply` without `--choices`. This is not recommended.
+
+### Review and apply from the browser (optional)
+
+Downloading `review.html` and copying `choices.json` back gets tedious. The review server does it for you: the notification links to the review page, you approve or reject on your phone or computer, and the **Apply approved changes** button applies them right away. The page then shows the result.
+
+```bash
+.venv/bin/python configure.py --review-server
+```
+
+The wizard asks for a login, a password (a random one is suggested), a local port and the public address, installs a systemd user service, and prints the reverse proxy block to add, for example with nginx:
+
+```nginx
+location /logos/ {
+    proxy_pass http://127.0.0.1:8787/;
+    proxy_set_header Host $host;
+    client_max_body_size 6m;
+}
+```
+
+- The server only listens on `127.0.0.1`: it is reached through your reverse proxy, in HTTPS. Every page asks for the login and password. If your proxy adds its own login, turn it off for this address (`auth_basic off;` with nginx).
+- The home page lists the latest dry runs. A dry run can only be applied once, and not when a newer full dry run exists: apply that one instead.
+- The notifications link to the page on the server (`REVIEW_URL`) instead of the file path.
 
 ### Ignore list
 
@@ -294,6 +318,7 @@ To redo a single step:
 | `configure.py --notifications` | Webhooks and Uptime Kuma |
 | `configure.py --cron` | Automatic run |
 | `configure.py --tautulli` | Queue processing for Tautulli in a container |
+| `configure.py --review-server` | [Review server](#review-and-apply-from-the-browser-optional) |
 
 A new token is only saved if Plex accepts it. **If your token changes**, the script stops with "Plex token rejected: change it with: .venv/bin/python configure.py --token", and also sends this message as a notification when run with `--notify`.
 
@@ -310,6 +335,9 @@ The wizard writes this file and makes it readable by you only, because it contai
 | `PLEX_POSTERS` | `yes`: also replace [Quebec posters](#quebec-posters) | `no` |
 | `NOTIFY_URLS` | [Webhooks](#notifications) for `--notify`, comma-separated | |
 | `HEALTHCHECK_URL` | [Uptime Kuma](#monitoring-with-uptime-kuma) push URL | |
+| `REVIEW_URL` | Public address of the [review server](#review-and-apply-from-the-browser-optional), linked in the notifications | `https://example.org/logos/` |
+| `REVIEW_USER` / `REVIEW_PASSWORD` | Login of the review server | `plex` / |
+| `REVIEW_PORT` | Local port of the review server | `8787` |
 | `PLEX_LOGS_DIR` | Logs folder | `logs/` next to the script |
 | `PLEX_LOGS_KEEP` | Dry-run log folders to keep. Application folders (with `undo.json`) are always kept | `100` |
 | `PLEX_OCR_CACHE` | OCR cache | `.cache-ocr.json` next to the script |

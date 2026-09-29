@@ -141,6 +141,11 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
 .btn { border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; border: 1px solid var(--line);
   background: var(--panel); color: var(--text); font-size: 14px; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.applystatus { margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: var(--panel);
+  border: 1px solid var(--line); }
+.applystatus.ok { border-color: var(--ok); background: var(--ok-bg); }
+.applystatus.no { border-color: var(--no); background: var(--no-bg); }
+.applystatus pre { white-space: pre-wrap; font-size: 12px; max-height: 320px; overflow: auto; margin: 8px 0 0; }
 .empty { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 40px 0; }
 @media (max-width: 420px) { main { grid-template-columns: 1fr; } }
 </style>
@@ -150,6 +155,7 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
   <h1>Plex logo review</h1>
   <div class="sub" id="sub"></div>
   <div class="steps" id="steps"></div>
+  <div class="applystatus" id="apply-status" hidden></div>
 </header>
 <div class="toolbar"><div class="toolbar-in" id="toolbar"></div></div>
 <main id="grid"></main>
@@ -158,11 +164,14 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
   <button class="btn" id="all-ok">Approve all (filter)</button>
   <button class="btn" id="all-no">Reject all (filter)</button>
   <button class="btn primary" id="export">Export choices.json</button>
+  <button class="btn primary" id="apply-now" hidden>Apply approved changes</button>
 </div></footer>
 <script type="application/json" id="data">__DATA__</script>
 <script>
 (function () {
   const DATA = JSON.parse(document.getElementById("data").textContent);
+  // Set by review_server.py when the page is served from the server: changes can be applied from here
+  const SERVER = window.REVIEW_SERVER || null;
   const cards = DATA.cards;
   const decidable = cards.filter(c => c.decidable);
   const storeKey = "plex-smart-logo-updater:" + DATA.simulation;
@@ -183,6 +192,13 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
       "To undo them: <code>plex-smart-logo-updater.py --undo logs/" + esc(DATA.simulation) + " --apply</code>";
     document.getElementById("footer").style.display = "none";
     document.body.style.paddingBottom = "16px";
+  } else if (SERVER) {
+    steps.innerHTML = "<b>How to:</b><ol>" +
+      "<li>Look at each change. Everything is <b>approved</b> by default: click <b>Reject</b> on the ones you do not want: rejected titles go to the ignore list and are not proposed again (<code>--unignore</code> to undo). The filters help you start with the doubtful cases (<b>Not verified</b>).</li>" +
+      "<li>Click <b>Apply approved changes</b> (at the bottom): they are applied to Plex right away.</li></ol>" +
+      "Your choices are kept in this browser if you close the page.";
+    document.getElementById("export").className = "btn";
+    document.getElementById("apply-now").hidden = false;
   } else {
     steps.innerHTML = "<b>How to:</b><ol>" +
       "<li>Look at each change. Everything is <b>approved</b> by default: click <b>Reject</b> on the ones you do not want: when you apply, rejected titles go to the ignore list and are not proposed again (<code>--unignore</code> to undo). The filters help you start with the doubtful cases (<b>Not verified</b>).</li>" +
@@ -284,15 +300,61 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
   document.getElementById("all-ok").onclick = () => setAll(true);
   document.getElementById("all-no").onclick = () => setAll(false);
 
-  document.getElementById("export").onclick = () => {
+  function choices() {
     const out = { format: DATA.format, simulation: DATA.simulation, exported: new Date().toISOString(), decisions: {} };
     decidable.forEach(c => { out.decisions[c.id] = { ok: decisions[c.id], target: c.target, title: c.title, library: c.library }; });
+    return out;
+  }
+
+  document.getElementById("export").onclick = () => {
+    const out = choices();
     const blob = new Blob([JSON.stringify(out, null, 1)], { type: "application/json" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob); a.download = "choices.json";
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   };
+
+  // Applying from the page (review_server.py)
+  const statusBox = document.getElementById("apply-status");
+  const applyBtn = document.getElementById("apply-now");
+  function showStatus(s) {
+    if (s && s.state === "none" && s.outdated) {
+      statusBox.hidden = false;
+      statusBox.className = "applystatus no";
+      statusBox.innerHTML = "<b>Outdated:</b> a newer dry run exists. Open it from the <a href=\"../../\">list</a> and apply that one.";
+      applyBtn.disabled = true;
+      return;
+    }
+    if (!s || s.state === "none") return;
+    statusBox.hidden = false;
+    const running = s.state === "running";
+    statusBox.className = "applystatus" + (running ? "" : (s.exit === 0 ? " ok" : " no"));
+    const head = running ? "<b>Applying…</b> this page updates by itself."
+      : s.exit === 0 ? "<b>Applied</b> on " + esc(s.finished) + ". Nothing more to do: this dry run is done."
+      : "<b>The application failed</b> (exit code " + esc(s.exit) + "): see the output below.";
+    statusBox.innerHTML = head + (s.output ? "<pre>" + esc(s.output) + "</pre>" : "");
+    applyBtn.disabled = true;
+    applyBtn.textContent = running ? "Applying…" : "Applied";
+    if (running) setTimeout(poll, 2000);
+  }
+  function poll() {
+    fetch("status", { cache: "no-store" }).then(r => r.json()).then(showStatus).catch(() => setTimeout(poll, 5000));
+  }
+  if (SERVER && !DATA.apply) {
+    poll();
+    applyBtn.onclick = () => {
+      const ok = decidable.filter(c => decisions[c.id]).length;
+      const no = decidable.length - ok;
+      if (!confirm(`Apply ${ok} change(s) to Plex?` + (no ? ` The ${no} rejected one(s) go to the ignore list.` : ""))) return;
+      applyBtn.disabled = true;
+      fetch("apply", { method: "POST", headers: { "Content-Type": "application/json", "X-Review-Token": SERVER.token },
+                       body: JSON.stringify(choices()) })
+        .then(r => r.json().then(j => ({ ok: r.ok, j })))
+        .then(({ ok, j }) => { if (!ok) { alert(j.error || "Error"); applyBtn.disabled = false; } else { poll(); } })
+        .catch(e => { alert("The server did not answer: " + e); applyBtn.disabled = false; });
+    };
+  }
 
   renderToolbar();
   renderGrid();

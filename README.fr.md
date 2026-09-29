@@ -30,7 +30,7 @@ Basé sur [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-lo
 
 - [Démarrage rapide](#démarrage-rapide)
 - [Installation pas à pas](#installation-pas-à-pas)
-- [Utilisation au quotidien](#utilisation-au-quotidien) : simulation, contrôle, application, titres ignorés, annulation
+- [Utilisation au quotidien](#utilisation-au-quotidien) : simulation, contrôle, application, contrôle depuis le navigateur, titres ignorés, annulation
 - [Automatisation](#automatisation) : analyse automatique, notifications, Tautulli, Uptime Kuma
 - [Référence](#référence) : assistant, réglages, options
 - [Comment ça marche](#comment-ça-marche) : choix de la langue, détection du Québec, affiches
@@ -187,7 +187,31 @@ Déposez `choices.json` dans le dossier de la simulation, puis :
 
 Seuls les changements validés sont appliqués, et ceux que vous avez refusés vont dans les [titres ignorés](#titres-ignorés). Si Plex a modifié un titre depuis la simulation, le titre n'est pas touché et reçoit le tag `[RECHECK]` : relancez une simulation.
 
+Seuls les titres présents dans `choices.json` sont examinés : l'application prend quelques secondes.
+
 Pour tout appliquer sans passer par la page de contrôle, lancez `--apply` sans `--choices`. Ce n'est pas recommandé.
+
+### Contrôler et appliquer depuis le navigateur (facultatif)
+
+Télécharger `review.html` puis renvoyer `choices.json` devient vite fastidieux. Le serveur de contrôle s'en charge : la notification contient le lien de la page de contrôle, vous validez ou refusez depuis votre téléphone ou votre ordinateur, et le bouton **Apply approved changes** applique aussitôt les changements. La page affiche ensuite le résultat.
+
+```bash
+.venv/bin/python configure.py --review-server
+```
+
+L'assistant demande un identifiant, un mot de passe (un mot de passe aléatoire est proposé), un port local et l'adresse publique. Il installe un service systemd utilisateur, puis affiche le bloc à ajouter à votre reverse proxy, par exemple avec nginx :
+
+```nginx
+location /logos/ {
+    proxy_pass http://127.0.0.1:8787/;
+    proxy_set_header Host $host;
+    client_max_body_size 6m;
+}
+```
+
+- Le serveur n'écoute que sur `127.0.0.1` : on y accède par votre reverse proxy, en HTTPS. Chaque page demande l'identifiant et le mot de passe. Si votre proxy ajoute sa propre authentification, désactivez-la pour cette adresse (`auth_basic off;` avec nginx).
+- La page d'accueil liste les dernières simulations. Une simulation ne peut être appliquée qu'une fois, et plus du tout quand une simulation complète plus récente existe : appliquez plutôt celle-ci.
+- Les notifications pointent vers la page sur le serveur (`REVIEW_URL`) au lieu du chemin du fichier.
 
 ### Titres ignorés
 
@@ -296,6 +320,7 @@ Pour refaire une seule étape :
 | `configure.py --notifications` | Webhooks et Uptime Kuma |
 | `configure.py --cron` | Analyse automatique |
 | `configure.py --tautulli` | Traitement de la file pour Tautulli dans un conteneur |
+| `configure.py --review-server` | [Serveur de contrôle](#contrôler-et-appliquer-depuis-le-navigateur-facultatif) |
 
 Un nouveau token n'est enregistré que si Plex l'accepte. **Si votre token change**, le script s'arrête avec « Plex token rejected: change it with: .venv/bin/python configure.py --token », et envoie aussi ce message en notification quand il est lancé avec `--notify`.
 
@@ -312,6 +337,9 @@ L'assistant écrit ce fichier et le rend lisible par vous seul, parce qu'il cont
 | `PLEX_POSTERS` | `yes` : remplace aussi les [affiches québécoises](#affiches-québécoises) | `no` |
 | `NOTIFY_URLS` | [Webhooks](#notifications) pour `--notify`, séparés par des virgules | |
 | `HEALTHCHECK_URL` | URL de push [Uptime Kuma](#surveillance-avec-uptime-kuma) | |
+| `REVIEW_URL` | Adresse publique du [serveur de contrôle](#contrôler-et-appliquer-depuis-le-navigateur-facultatif), donnée dans les notifications | `https://example.org/logos/` |
+| `REVIEW_USER` / `REVIEW_PASSWORD` | Identifiants du serveur de contrôle | `plex` / |
+| `REVIEW_PORT` | Port local du serveur de contrôle | `8787` |
 | `PLEX_LOGS_DIR` | Dossier des logs | `logs/` à côté du script |
 | `PLEX_LOGS_KEEP` | Nombre de dossiers de simulation gardés. Les dossiers d'application (avec `undo.json`) sont toujours gardés | `100` |
 | `PLEX_OCR_CACHE` | Cache de l'OCR | `.cache-ocr.json` à côté du script |

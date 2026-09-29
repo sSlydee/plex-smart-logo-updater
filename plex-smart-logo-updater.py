@@ -33,6 +33,7 @@ or in environment variables, which take precedence:
   PLEX_IGNORE_FILE  ignore list, default: ignored.json next to the script
   NOTIFY_URLS     webhooks for --notify: Discord, Bark or generic (see notify.py)
   HEALTHCHECK_URL Uptime Kuma push URL (or healthchecks.io URL) pinged after every run
+  REVIEW_URL      public address of review_server.py, linked in the notifications
   PLEX_POSTERS    "yes": also replace Quebec posters on every run (same as --posters)
 
 See --help for the options.
@@ -61,7 +62,7 @@ import notify as notifier
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-__version__ = "1.5.2"
+__version__ = "1.6.0"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -109,6 +110,8 @@ LOGS_KEEP = int(os.environ.get("PLEX_LOGS_KEEP", "100"))
 CRON_LOG_MAX_BYTES = 5 * 1024 * 1024
 # Uptime Kuma push URL (or healthchecks.io-style URL) pinged after every run
 HEALTHCHECK_URL = os.environ.get("HEALTHCHECK_URL", "").strip()
+# Public address of review_server.py: the notifications link to the review page there
+REVIEW_URL = os.environ.get("REVIEW_URL", "").strip()
 # DISCORD_WEBHOOK is still accepted for backward compatibility
 NOTIFY_TARGETS = notifier.parse_targets(
     " ".join(filter(None, [os.environ.get("NOTIFY_URLS", ""), os.environ.get("DISCORD_WEBHOOK", "")])))
@@ -1220,6 +1223,33 @@ def prune_logs():
         pass
 
 
+def mark_applied(choices_path, run_dir):
+    """
+    Records in the dry run's folder that its choices were applied (applied.json),
+    so review_server.py does not offer to apply them again.
+    """
+    folder = os.path.dirname(os.path.abspath(choices_path))
+    if not folder.endswith(("_simulation",)) and not re.search(r"_simulation_\d+$", folder):
+        return
+    path = os.path.join(folder, "applied.json")
+    if os.path.exists(path):
+        return  # applied from review_server.py: it records the state itself
+    now = time.strftime("%Y-%m-%d %H:%M")
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"started": now, "finished": now, "exit": 0, "pid": None,
+                       "application": os.path.basename(run_dir.rstrip("/"))}, f, indent=1)
+    except OSError:
+        pass
+
+
+def review_link(run_dir):
+    """Where to open the review page: on review_server.py when REVIEW_URL is set, otherwise the file."""
+    if REVIEW_URL:
+        return f"{REVIEW_URL.rstrip('/')}/run/{os.path.basename(run_dir.rstrip('/'))}/"
+    return os.path.join(run_dir, "review.html")
+
+
 def run(opts):
     start = time.time()
     opts.posters = getattr(opts, "posters", False) or CHECK_POSTERS
@@ -1262,6 +1292,10 @@ def run(opts):
     selected = None
     if opts.rating_keys:
         selected = select_titles(plex, opts.rating_keys, summary)
+    elif ctx.choices is not None:
+        # Only the titles of the choices file can change: the others are not even looked at
+        keys = sorted({k.split(":")[0] for k in ctx.choices})
+        selected = select_titles(plex, keys, summary) if keys else {}
 
     for name in TARGET_LIBRARIES:
         section = sections.get(name)
@@ -1343,6 +1377,8 @@ def run(opts):
         page = os.path.join(run_dir, "review.html")
         html_report.write(page, run_dir=os.path.basename(run_dir), apply=opts.apply, cards=ctx.html)
         summary(f"  Review page: {page}")
+        if REVIEW_URL and not opts.apply and to_do:
+            summary(f"  Online     : {review_link(run_dir)}")
         if not opts.apply and to_do:
             summary("  Open it, approve or reject each change, then export choices.json and run:")
             summary(f"    plex-smart-logo-updater.py --apply --choices {os.path.join(run_dir, 'choices.json')}")
@@ -1358,6 +1394,8 @@ def run(opts):
     summary(LINE)
     summary.close()
 
+    if opts.apply and opts.choices:
+        mark_applied(opts.choices, run_dir)
     if opts.notify:
         notify(opts, run_dir, totals, page, time.time() - start, ctx.pending)
     ping_healthcheck(not totals["error"],
@@ -1486,11 +1524,12 @@ def notify(opts, run_dir, totals, page, duration, pending=None):
     """
     to_do = changes(totals)
     manual = totals["check"] + totals["locked_qc"] + totals["poster_check"] + totals["poster_locked_qc"]
-    new_manual = new_manual_titles(manual, os.path.join(LOGS_DIR, ".notified-manual.json"),
-                                   targeted=bool(opts.rating_keys))
+    # A run limited to some titles (--rating-key, or the titles of a choices file) only sees those
+    targeted = bool(opts.rating_keys or opts.choices)
+    new_manual = new_manual_titles(manual, os.path.join(LOGS_DIR, ".notified-manual.json"), targeted=targeted)
     if not opts.apply:
         new_pending = new_pending_changes(pending or {}, os.path.join(LOGS_DIR, ".notified-pending.json"),
-                                          targeted=bool(opts.rating_keys))
+                                          targeted=targeted)
         if not new_pending:
             to_do = 0  # already notified: a targeted run stays quiet
     if not (to_do or totals["error"] or new_manual):
@@ -1515,7 +1554,7 @@ def notify(opts, run_dir, totals, page, duration, pending=None):
     if totals["error"]:
         lines.append(f"{len(totals['error'])} error(s)")
     if page and not opts.apply and to_do:
-        lines.append(f"Review page: {page}")
+        lines.append(f"Review page: {review_link(run_dir)}")
     lines.append(f"Logs: {os.path.basename(run_dir.rstrip('/'))} ({minutes(duration)})")
     body = "\n".join(lines)
     markdown = "\n".join(f"• {l}" if not l.startswith(("Review page", "Logs")) else f"`{l}`" for l in lines)

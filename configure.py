@@ -112,7 +112,9 @@ def write_config(path, values):
                           "Do not publish: this file contains your Plex token and webhooks."],
                   comments={"PLEX_POSTERS": "yes: also replace Quebec posters in French libraries",
                             "NOTIFY_URLS": "Webhooks for --notify (Discord, Bark or json:<url>), comma-separated",
-                            "HEALTHCHECK_URL": "Uptime Kuma push URL (or healthchecks.io URL), pinged after every run"})
+                            "HEALTHCHECK_URL": "Uptime Kuma push URL (or healthchecks.io URL), pinged after every run",
+                            "REVIEW_URL": "Review server (configure.py --review-server): public address, login, "
+                                          "password, local port"})
 
 
 def parse_hour(text):
@@ -384,6 +386,102 @@ def step_tautulli():
         print("  Script File: tautulli-hook.sh   Triggers: Recently Added   Arguments: {rating_key}")
 
 
+SERVICE_NAME = "plex-smart-logo-review.service"
+
+
+def service_unit(python, script):
+    """systemd user unit running review_server.py (paths may contain spaces: quoted)."""
+    return (f"[Unit]\nDescription=plex-smart-logo-updater review server\nAfter=network-online.target\n\n"
+            f"[Service]\nWorkingDirectory={HERE}\nExecStart=\"{python}\" \"{script}\"\n"
+            f"Restart=on-failure\nRestartSec=10\n\n[Install]\nWantedBy=default.target\n")
+
+
+def port_in_use(port):
+    import socket
+    with socket.socket() as s:
+        try:
+            s.bind(("127.0.0.1", int(port)))
+        except OSError:
+            return True
+    return False
+
+
+def free_port():
+    """A free port: one suggested by the host (Ultra.cc-style app-ports) that nothing listens on, otherwise 8787."""
+    try:
+        out = subprocess.run(["app-ports", "free"], capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.SubprocessError):
+        out = ""
+    for port in re.findall(r"\b(\d{4,5})\b", out) + ["8787"]:
+        if not port_in_use(port):
+            return port
+    return "8787"
+
+
+def step_review_server(values):
+    import secrets
+    title("Review server: review and apply from your browser (optional)")
+    print("A small web server shows the review pages and applies the approved changes from the")
+    print("browser: no choices.json to copy. It only listens on 127.0.0.1: put it behind your")
+    print("reverse proxy (HTTPS). Every page asks for a login and password.")
+    if not ask_yes("Set it up?", default=bool(values.get("REVIEW_PASSWORD"))):
+        return False
+    values["REVIEW_USER"] = ask("Login", values.get("REVIEW_USER") or "plex")
+    password = values.get("REVIEW_PASSWORD") or secrets.token_urlsafe(12)
+    values["REVIEW_PASSWORD"] = ask("Password (a random one is suggested)", password)
+    while True:
+        port = ask("Local port", values.get("REVIEW_PORT") or free_port())
+        if not (port.isdigit() and 1024 < int(port) < 65536):
+            print("  Invalid port, type a number between 1025 and 65535.")
+        elif port != values.get("REVIEW_PORT") and port_in_use(port):
+            print("  This port is already in use, pick another one.")
+        else:
+            values["REVIEW_PORT"] = port
+            break
+    url = ask("Public address of the server (e.g. https://example.org/logos/), used in the notifications",
+              values.get("REVIEW_URL", ""))
+    if url and not re.match(r"^https?://\S+$", url):
+        print("  ✗ Invalid address: not saved.")
+        url = values.get("REVIEW_URL", "")
+    values["REVIEW_URL"] = url
+
+    unit_dir = os.path.expanduser("~/.config/systemd/user")
+    python = os.path.join(HERE, ".venv", "bin", "python")
+    try:
+        os.makedirs(unit_dir, exist_ok=True)
+        with open(os.path.join(unit_dir, SERVICE_NAME), "w", encoding="utf-8") as f:
+            f.write(service_unit(python, os.path.join(HERE, "review_server.py")))
+        print(f"  ✓ Service written: {os.path.join(unit_dir, SERVICE_NAME)}")
+    except OSError as e:
+        print(f"  ✗ Cannot write the service ({e}): start review_server.py yourself.")
+    location = re.sub(r"^https?://[^/]+", "", url) or "/logos/"
+    location = location if location.endswith("/") else location + "/"
+    print()
+    print("Reverse proxy, nginx example (adapt the path):")
+    print(f"  location {location} {{")
+    print(f"      proxy_pass http://127.0.0.1:{values['REVIEW_PORT']}/;")
+    print("      proxy_set_header Host $host;")
+    print("      client_max_body_size 6m;")
+    print("  }")
+    return True
+
+
+def start_review_service():
+    """(Re)starts the systemd user service, after config.env was saved."""
+    for command in (["systemctl", "--user", "daemon-reload"],
+                    ["systemctl", "--user", "enable", SERVICE_NAME],
+                    ["systemctl", "--user", "restart", SERVICE_NAME]):
+        try:
+            done = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError) as e:
+            print(f"  ✗ {' '.join(command)}: {e}")
+            return
+        if done.returncode != 0:
+            print(f"  ✗ {' '.join(command)}: {done.stderr.strip()}")
+            return
+    print(f"  ✓ Service started: systemctl --user status {SERVICE_NAME}")
+
+
 def parse_args():
     p = argparse.ArgumentParser(description="plex-smart-logo-updater setup wizard (writes config.env).")
     p.add_argument("--token", nargs="?", const="", metavar="TOKEN",
@@ -394,6 +492,8 @@ def parse_args():
     p.add_argument("--notifications", action="store_true", help="redo the notifications only")
     p.add_argument("--cron", action="store_true", help="redo the automatic run only")
     p.add_argument("--tautulli", action="store_true", help="turn on/off processing of titles queued by Tautulli")
+    p.add_argument("--review-server", action="store_true",
+                   help="set up the review server (review and apply from the browser)")
     # Former French names, still accepted
     p.add_argument("--serveur", dest="server", action="store_true", help=argparse.SUPPRESS)
     p.add_argument("--bibliotheques", dest="libraries", action="store_true", help=argparse.SUPPRESS)
@@ -410,7 +510,7 @@ def main():
     args = parse_args()
     values = read_config(CONFIG_PATH)
     partial = args.token is not None or args.server or args.libraries or args.language \
-        or args.notifications or args.cron or args.tautulli
+        or args.notifications or args.cron or args.tautulli or args.review_server
 
     if partial:
         if not values and not (args.cron or args.tautulli):
@@ -437,6 +537,9 @@ def main():
             step_cron()
         if args.tautulli:
             step_tautulli()
+        if args.review_server and values and step_review_server(values):
+            save(values)
+            start_review_service()
         return
 
     print("plex-smart-logo-updater setup")
