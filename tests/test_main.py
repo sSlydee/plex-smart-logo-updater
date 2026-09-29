@@ -686,3 +686,37 @@ def test_a_queued_title_retried_later_is_not_an_error(main, monkeypatch, tmp_pat
     opts = run_options(apply=False, rating_keys=["555"])
     opts.queued = ["555"]
     assert main.run(opts) == main.OK and opts.requeued == ["555"]
+
+
+def test_plex_going_away_while_listing_libraries_stops_cleanly(main, monkeypatch, tmp_path):
+    """Regression: a connection error in plex.library.sections() went to the crash path (no notification)."""
+    import requests
+
+    class Plex:
+        friendlyName, version = "Fake", "1"
+
+        class library:
+            @staticmethod
+            def sections():
+                raise requests.exceptions.ConnectionError("connection reset")
+
+    monkeypatch.setattr(main, "PlexServer", lambda *a, **k: Plex())
+    monkeypatch.setattr(main, "HEALTHCHECK_URL", "")
+    assert main.run(run_options(apply=False)) == main.STOPPED
+
+
+def test_prune_keeps_the_latest_full_dry_run(main, monkeypatch, tmp_path):
+    """Regression: many small Tautulli runs pruned the weekly dry run still waiting for its review."""
+    import runstate
+    logs = tmp_path / "logs"
+    weekly = logs / "2026-01-05_06h00m00_simulation"
+    weekly.mkdir(parents=True)
+    runstate.write_run_info(str(weekly), False, ["Films"], True)
+    for i in range(5):
+        small = logs / f"2026-01-06_10h00m0{i}_simulation"
+        small.mkdir()
+        runstate.write_run_info(str(small), True, ["Films"], True)
+    monkeypatch.setattr(main, "LOGS_DIR", str(logs))
+    monkeypatch.setattr(main, "LOGS_KEEP", 2)
+    main.prune_logs()
+    assert weekly.exists() and len(os.listdir(logs)) == 6

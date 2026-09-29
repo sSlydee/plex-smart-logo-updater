@@ -1247,6 +1247,12 @@ def prune_logs(keep=()):
                 and not any(os.path.exists(os.path.join(LOGS_DIR, n, f)) for f in ("undo.json", "annulation.json"))
                 and os.path.abspath(os.path.join(LOGS_DIR, n)) not in keep
                 and not application_pending(os.path.join(LOGS_DIR, n))]
+    # The latest complete full dry run and every newer one may still wait for a review: kept even
+    # when many small (Tautulli) runs push them beyond the limit
+    full = [n for n in dry_runs if (lambda i: i.get("complete") and not i.get("targeted"))(
+        runstate.read(os.path.join(LOGS_DIR, n), runstate.RUN_FILE) or {})]
+    if full:
+        dry_runs = [n for n in dry_runs if n < full[-1]]
     for name in dry_runs[:max(0, len(dry_runs) - LOGS_KEEP)]:
         shutil.rmtree(os.path.join(LOGS_DIR, name), ignore_errors=True)
 
@@ -1375,11 +1381,16 @@ def run(opts):
     except Exception as e:
         stop(opts, summary, e)
         return STOPPED
+    clear_failure()  # Plex answers again: a later failure is notified again
 
     write_header(summary, "OVERALL SUMMARY — Plex logos", opts,
                  [f"Server      : {server}", f"Folder      : {run_dir}"])
 
-    sections = {s.title: s for s in plex.library.sections()}
+    try:
+        sections = {s.title: s for s in plex.library.sections()}
+    except Exception as e:  # Plex went away right after connecting
+        stop(opts, summary, e)
+        return STOPPED
     missing = [name for name in TARGET_LIBRARIES if name not in sections]
     if missing:
         summary("")
@@ -1425,7 +1436,8 @@ def run(opts):
         try:
             results = process_library(plex, section, log, opts, ctx, languages,
                                       selected[name] if selected is not None else None)
-        except TokenError as e:
+        except (TokenError, requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            # Token rejected, or Plex went away while listing or reading the library
             log(redact(f"\n[!] Stopped: {e}"))
             log.close()
             stop(opts, summary, e)
