@@ -208,7 +208,7 @@ location /logos/ {
 ```
 
 - The server only listens on `127.0.0.1`: it is reached through your reverse proxy, in HTTPS. A sign-in page protects every page; the session lasts 30 days, and changing the password signs everyone out. After 10 failed attempts, sign-in is refused for 15 minutes. If your proxy adds its own login, turn it off for this address (`auth_basic off;` with nginx).
-- The home page lists the latest dry runs. A dry run can only be applied once, and not when a newer full dry run exists: apply that one instead.
+- The home page lists the latest dry runs. A dry run can only be applied once (an application that failed, for example while Plex was down, can be applied again), and not once a newer full dry run covering the same libraries exists: apply that one instead.
 - The notifications link to the page on the server (`REVIEW_URL`) instead of the file path.
 
 ### Ignore list
