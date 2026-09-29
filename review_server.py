@@ -274,8 +274,10 @@ def status(folder):
         with _STATE_LOCK:
             state = read_state(folder) or state
             if state.get("exit") is None:
-                # Its exit code was not recorded: a run that went to the end prints its totals
-                state.update(exit=0 if "TOTAL (" in output else -1, finished=state.get("started"))
+                # Its exit code was not recorded: the application leaves its outcome in "result"
+                # (older ones did not: a run that went to the end prints its totals)
+                guess = 0 if "TOTAL (" in output else -1
+                state.update(exit=state.get("result", guess), finished=state.get("started"))
                 write_state(folder, state)
     return {"state": "running" if state.get("exit") is None else "done", "exit": state.get("exit"),
             "started": state.get("started"), "finished": state.get("finished"), "output": output}
@@ -315,10 +317,13 @@ def start_apply(folder, choices):
 
     def wait():
         code = proc.wait()
-        state.update(exit=code, finished=time.strftime("%Y-%m-%d %H:%M"))
         with _STATE_LOCK:
-            write_state(folder, state)
-        _PROCS.pop(folder, None)
+            current = read_state(folder) or state
+            if current.get("pid") == proc.pid:  # never overwrite the state of a later application
+                current.update(exit=code, finished=time.strftime("%Y-%m-%d %H:%M"))
+                write_state(folder, current)
+            if _PROCS.get(folder) is proc:
+                del _PROCS[folder]
 
     threading.Thread(target=wait, daemon=True).start()
     return None

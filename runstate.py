@@ -85,15 +85,24 @@ def mark_applied(dry_run_folder, application_folder, exit_code=0):
     if not is_dry_run_folder(dry_run_folder):
         return
     current = read(dry_run_folder, APPLIED_FILE)
-    # Kept: a recorded success, or another application still running (the review server records
-    # its end). Replaced: a failed one (a successful retry shows as applied), one whose process
-    # is gone (killed by a restart), and this very process (started by a review server that
-    # restarted meanwhile, so nobody else will record its end)
+    # Kept: a recorded success, or an application still running (the review server records its
+    # end). Replaced: a failed one (a successful retry shows as applied) and one whose process is
+    # gone (killed by a restart). The application started by the review server (this very
+    # process) only leaves its outcome in "result": its end is recorded by the server once the
+    # process has exited, not before its notifications are sent (an early "done" would let the
+    # page start a second application meanwhile)
     if current is not None:
         pid = current.get("pid")
         if current.get("exit") == 0:
             return
-        if current.get("exit") is None and pid != os.getpid() and application_running(pid):
+        if current.get("exit") is None and pid == os.getpid():
+            current["result"] = exit_code
+            try:
+                write(dry_run_folder, APPLIED_FILE, current)
+            except OSError:
+                pass
+            return
+        if current.get("exit") is None and application_running(pid):
             return
     try:
         write(dry_run_folder, APPLIED_FILE, {"started": now(), "finished": now(), "exit": exit_code, "pid": None,

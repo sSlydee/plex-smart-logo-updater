@@ -421,9 +421,21 @@ def test_command_line_retry_replaces_a_dead_application(main, tmp_path):
     assert json.loads((folder / "applied.json").read_text())["exit"] == 0
 
 
-def test_application_records_itself_after_a_server_restart(main, tmp_path):
+def test_application_leaves_its_result_without_ending_its_state(main, tmp_path):
+    """Regression: the application marked itself done before sending its notifications, so the page offered
+    "Apply again" while it was still running, and a second application could start."""
     folder = tmp_path / RUN
     folder.mkdir()
     (folder / "applied.json").write_text(json.dumps({"exit": None, "pid": os.getpid()}))
     main.mark_applied(str(folder / "choices.json"), str(tmp_path / "x_application"), main.ERRORS)
-    assert json.loads((folder / "applied.json").read_text())["exit"] == main.ERRORS
+    state = json.loads((folder / "applied.json").read_text())
+    assert state["exit"] is None and state["result"] == main.ERRORS
+
+
+def test_result_is_used_when_the_server_restarted(server):
+    """After a server restart, the end of an application it did not start comes from its recorded result."""
+    rs, base, logs = server
+    (logs / RUN / "applied.json").write_text(json.dumps({"exit": None, "pid": 999999999, "result": 2,
+                                                         "started": "x"}))
+    status = json.loads(request(base + f"/run/{RUN}/status")[1])
+    assert status["state"] == "done" and status["exit"] == 2
