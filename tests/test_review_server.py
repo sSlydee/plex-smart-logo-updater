@@ -439,3 +439,8 @@ def test_result_is_used_when_the_server_restarted(server):
                                                          "started": "x"}))
     status = json.loads(request(base + f"/run/{RUN}/status")[1])
     assert status["state"] == "done" and status["exit"] == 2
+
+
+def test_huge_session_expiry_does_not_crash(server):
+    rs, _, _ = server
+    assert rs.valid_session("9" * 5000 + ".ab.cd") is False

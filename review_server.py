@@ -126,7 +126,8 @@ def valid_session(value):
         return False
     expiry, nonce, sig = parts
     # isascii(): str.isdigit() also accepts "²" or Arabic-Indic digits, which int() rejects
-    if not (expiry.isascii() and expiry.isdigit()) or int(expiry) < time.time() or sig in _REVOKED:
+    if not (expiry.isascii() and expiry.isdigit() and len(expiry) <= 12) or int(expiry) < time.time() \
+            or sig in _REVOKED:
         return False
     return nonce.isascii() and same_secret(sig, session_signature(expiry, nonce))
 
@@ -247,19 +248,22 @@ def outdated(folder):
         other = os.path.join(LOGS_DIR, n)
         if n <= name or not RUN_NAME.match(n):
             continue
-        info = run_info(other)
-        if info["full"]:
-            if info["libraries"] is None:
-                return True
-            if my_libraries is None:
-                my_libraries = set(summary(folder)["libraries"])
-            if my_libraries <= set(info["libraries"]):
-                return True
-        if os.path.isfile(os.path.join(other, "review.html")):
-            if mine is None:
-                mine = set(summary(folder)["ids"])
-            if mine and mine <= set(summary(other)["ids"]):
-                return True
+        try:
+            info = run_info(other)
+            if info["full"]:
+                if info["libraries"] is None:
+                    return True
+                if my_libraries is None:
+                    my_libraries = set(summary(folder)["libraries"])
+                if my_libraries <= set(info["libraries"]):
+                    return True
+            if os.path.isfile(os.path.join(other, "review.html")):
+                if mine is None:
+                    mine = set(summary(folder)["ids"])
+                if mine and mine <= set(summary(other)["ids"]):
+                    return True
+        except OSError:
+            continue  # pruned meanwhile by a run starting
     return False
 
 
