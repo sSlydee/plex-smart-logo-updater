@@ -461,6 +461,8 @@ def step_review_server(values):
     print(f"  location {location} {{")
     print(f"      proxy_pass http://127.0.0.1:{values['REVIEW_PORT']}/;")
     print("      proxy_set_header Host $host;")
+    print("      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;  # sign-in limit per visitor")
+    print("      proxy_set_header X-Forwarded-Proto $scheme;")
     print("      client_max_body_size 6m;")
     print("  }")
     return True

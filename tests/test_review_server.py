@@ -355,3 +355,18 @@ def test_next_cannot_inject_headers(server):
     assert all("injected" not in v for v in headers.get_all("Set-Cookie") or [])
     status, headers, _ = raw(base + f"/login?next=run/{RUN}/", headers={"Cookie": cookie})
     assert headers["Location"] == f"./run/{RUN}/"
+
+
+def test_session_cookie_is_secure_when_the_public_address_is_https(server, monkeypatch):
+    """Regression: Secure was only set from X-Forwarded-Proto, which the documented proxy block did not send."""
+    rs, base, _ = server
+    monkeypatch.setattr(rs, "REVIEW_URL", "https://example.org/logos/")
+    assert "Secure" in sign_in(base)[1]["Set-Cookie"]
+
+
+def test_failure_tracking_is_bounded(server, monkeypatch):
+    rs, _, _ = server
+    monkeypatch.setattr(rs, "MAX_TRACKED", 50)
+    for i in range(500):
+        rs.record_failure(f"10.0.{i // 256}.{i % 256}")
+    assert len(rs._FAILURES) <= 50

@@ -203,11 +203,13 @@ The wizard asks for a login, a password (a random one is suggested), a local por
 location /logos/ {
     proxy_pass http://127.0.0.1:8787/;
     proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
     client_max_body_size 6m;
 }
 ```
 
-- The server only listens on `127.0.0.1`: it is reached through your reverse proxy, in HTTPS. A sign-in page protects every page; the session lasts 30 days, and changing the password signs everyone out. After 10 failed attempts, sign-in is refused for 15 minutes. If your proxy adds its own login, turn it off for this address (`auth_basic off;` with nginx).
+- The server only listens on `127.0.0.1`: it is reached through your reverse proxy, in HTTPS. A sign-in page protects every page; the session lasts 30 days, and changing the password signs everyone out. After 10 failed attempts from the same visitor, sign-in is refused to that visitor for 15 minutes; the visitor is known by the address your proxy adds to `X-Forwarded-For`, so keep that header in the proxy block. If your proxy adds its own login, turn it off for this address (`auth_basic off;` with nginx).
 - The home page lists the latest dry runs. A dry run can only be applied once (an application that failed, for example while Plex was down, can be applied again), and not once a newer full dry run covering the same libraries exists: apply that one instead.
 - The notifications link to the page on the server (`REVIEW_URL`) instead of the file path.
 

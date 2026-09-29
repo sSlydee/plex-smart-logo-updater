@@ -47,6 +47,7 @@ PORT = int(os.environ.get("REVIEW_PORT", "8787"))
 BIND = os.environ.get("REVIEW_BIND", "127.0.0.1")
 USER = os.environ.get("REVIEW_USER", "plex") or "plex"
 PASSWORD = os.environ.get("REVIEW_PASSWORD", "")
+REVIEW_URL = os.environ.get("REVIEW_URL", "").strip()
 SCRIPT = os.path.join(HERE, "plex-smart-logo-updater.py")
 
 # Dry-run folders only (never an application or undo folder)
@@ -125,7 +126,16 @@ def too_many_failures(address):
     return len(recent) >= MAX_FAILURES
 
 
+MAX_TRACKED = 10000  # addresses remembered at most: forged or rotating addresses cannot fill the memory
+
+
 def record_failure(address):
+    if address not in _FAILURES and len(_FAILURES) >= MAX_TRACKED:
+        now = time.time()
+        for key in [k for k, times in _FAILURES.items() if not times or now - times[-1] >= FAILURE_WINDOW]:
+            del _FAILURES[key]
+        if len(_FAILURES) >= MAX_TRACKED:
+            _FAILURES.pop(next(iter(_FAILURES)))
     _FAILURES.setdefault(address, []).append(time.time())
 
 
@@ -556,7 +566,8 @@ class Handler(BaseHTTPRequestHandler):
         return False
 
     def session_cookie(self, value, max_age):
-        secure = "; Secure" if self.headers.get("X-Forwarded-Proto", "") == "https" else ""
+        https = self.headers.get("X-Forwarded-Proto", "") == "https" or REVIEW_URL.startswith("https://")
+        secure = "; Secure" if https else ""
         return ("Set-Cookie", f"{COOKIE}={value}; Max-Age={max_age}; HttpOnly; SameSite=Lax{secure}")
 
     def do_GET(self):
