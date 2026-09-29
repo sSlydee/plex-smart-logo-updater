@@ -1136,7 +1136,7 @@ def process_library(plex, section, log, opts, ctx, languages, items=None):
                 handle(item, label, plan)
             except Exception as e:
                 if is_unauthorized(e):
-                    raise TokenError(str(e)) from e
+                    raise TokenError(redact(e)) from e
                 status("error", redact(f"{what}: {e}" if asset is POSTER else e))
                 results["error"].append(redact(f"{label}{' [poster]' if asset is POSTER else ''}: {e}"))
                 titles = None
@@ -1338,7 +1338,7 @@ def run(opts):
             results = process_library(plex, section, log, opts, ctx, languages,
                                       selected[name] if selected is not None else None)
         except TokenError as e:
-            log(f"\n[!] Stopped: {e}")
+            log(redact(f"\n[!] Stopped: {e}"))
             log.close()
             stop(opts, summary, e)
             return STOPPED

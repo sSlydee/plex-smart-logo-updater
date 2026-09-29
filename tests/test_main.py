@@ -442,3 +442,34 @@ def test_applying_an_old_dry_run_keeps_its_folder(main, monkeypatch, tmp_path):
     assert old.exists()
     main.prune_logs()
     assert not old.exists()
+
+
+def test_a_rejected_token_is_not_logged(main, monkeypatch, tmp_path):
+    """Regression: a 401 on an image stopped the run with the HTTPError text, token included, in the library log."""
+    import argparse
+    import ignorelist
+
+    class Response:
+        status_code = 401
+
+    class Unauthorized(Exception):
+        response = Response()
+
+    class Item:
+        ratingKey, title, year = 5, "Real Steel", 2011
+
+        def logos(self):
+            return []
+
+    def failing_plan(*args):
+        raise Unauthorized("401 Client Error for url: http://h/file?X-Plex-Token=SecretTok3n")
+
+    monkeypatch.setattr(main, "PLEX_TOKEN", "SecretTok3n")
+    monkeypatch.setattr(main, "plan_item", failing_plan)
+    ctx = main.Context()
+    ctx.ignored = ignorelist.IgnoreList(str(tmp_path / "ignored.json"))
+    opts = argparse.Namespace(apply=False, choices=None, replace=False, include_locked=False,
+                              fix_locked_quebec=False, posters=False)
+    with pytest.raises(main.TokenError) as stopped:
+        main.process_library(None, FakeSection([Item()]), lambda m: None, opts, ctx, ["fr-FR"])
+    assert "SecretTok3n" not in str(stopped.value)
