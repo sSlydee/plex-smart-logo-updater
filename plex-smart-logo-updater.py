@@ -1282,7 +1282,8 @@ def review_link(run_dir):
 OK, ERRORS, STOPPED = 0, 2, 1
 
 
-MAX_REQUEUE = 6  # retries per title (every 5 minutes): then the weekly run catches it
+MAX_REQUEUE = 6  # retries per title: then the weekly run catches it
+RETRY_DELAY = 300  # seconds before a requeued title is tried again (queued runs may be waiting in line)
 
 
 def requeue(keys, path=None):
@@ -1307,8 +1308,9 @@ def requeue(keys, path=None):
     except OSError:
         pass
     if kept:
+        not_before = int(time.time() + RETRY_DELAY)
         with open(path, "a", encoding="utf-8") as f:
-            f.write("".join(f"{k}\n" for k in kept))
+            f.write("".join(f"{k}@{not_before}\n" for k in kept))
     return kept
 
 
@@ -1395,7 +1397,13 @@ def run(opts):
         # Only the titles of the choices file can change: the others are not even looked at
         keys = sorted({k.split(":")[0] for k in ctx.choices})
         selected = select_titles(plex, keys, summary, unread) if keys else {}
-    totals["error"].extend(f"ratingKey {key}: could not be read from Plex" for key in unread)
+    # Queued titles (Tautulli) are tried again a little later: only a title given up is an error
+    queued = getattr(opts, "queued", None) or []
+    opts.requeued = requeue([k for k in unread if k in queued]) if queued else []
+    for key in opts.requeued:
+        summary(f"  [i] ratingKey {key}: will be tried again in {RETRY_DELAY // 60} minutes")
+    totals["error"].extend(f"ratingKey {key}: could not be read from Plex"
+                           for key in unread if key not in opts.requeued)
     opts.unprocessed = unread
 
     for name in TARGET_LIBRARIES:
@@ -1819,11 +1827,24 @@ def take_queue(path=None):
         os.replace(path, taking)
     except FileNotFoundError:
         return []
+    keys, later = [], []
+    now = time.time()
     try:
         with open(taking, encoding="utf-8") as f:
-            keys = [k for line in f for k in re.split(r"[\s,]+", line) if k.isdigit()]
+            for token in (t for line in f for t in re.split(r"[\s,]+", line)):
+                # "<key>" from the hook, or "<key>@<epoch>" for a retry not to run before then
+                key, _, not_before = token.partition("@")
+                if not key.isdigit():
+                    continue
+                if not_before.isdigit() and int(not_before) > now:
+                    later.append(token)
+                else:
+                    keys.append(key)
     finally:
         os.remove(taking)
+    if later:
+        with open(path, "a", encoding="utf-8") as f:
+            f.write("".join(f"{t}\n" for t in later))
     return list(dict.fromkeys(keys))  # without duplicates, in order
 
 
@@ -1930,20 +1951,22 @@ if __name__ == "__main__":
                     if not queued:
                         raise SystemExit(0)  # nothing queued: no run, no log, no ping
                     options.rating_keys = (options.rating_keys or []) + queued
+                    options.queued = queued
                 try:
                     outcome = run(options)
+                except Exception:
+                    if queued:  # under the lock: try these titles again a little later
+                        requeue([k for k in queued if k not in (getattr(options, "requeued", None) or [])])
+                    raise
                 finally:
                     OCR.save()  # while still holding the lock (a stopped run would save at exit, unlocked)
                 if outcome == STOPPED and queued:
-                    requeue(queued)  # Plex unreachable: try these titles again next time
+                    # Plex unreachable: try these titles again a little later
+                    requeue([k for k in queued if k not in (getattr(options, "requeued", None) or [])])
                 elif queued:
                     unprocessed = getattr(options, "unprocessed", None) or []
-                    if unprocessed:
-                        requeue([k for k in queued if k in unprocessed])
                     forget_retries([k for k in queued if k not in unprocessed])
         except Exception as crash:
-            if queued:
-                requeue(queued)
             # Unexpected crash: tell the monitoring before showing the traceback
             ping_healthcheck(False, redact(f"crash: {type(crash).__name__}: {crash}"))
             # The traceback goes to cron.log / tautulli.log: without the token

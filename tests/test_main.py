@@ -379,9 +379,13 @@ def test_unreachable_plex_is_a_failed_run(main, monkeypatch):
     assert main.run(run_options()) == main.STOPPED != 0
 
 
-def test_requeue_puts_titles_back(main, tmp_path):
+def test_requeue_puts_titles_back_after_a_delay(main, monkeypatch, tmp_path):
+    """Regression: runs waiting behind a long run took a requeued title again at once, using all retries in seconds."""
     queue = str(tmp_path / "queue.txt")
     main.requeue(["12", "34"], queue)
+    assert main.take_queue(queue) == []          # too early: kept in the queue
+    later = main.time.time() + main.RETRY_DELAY + 1
+    monkeypatch.setattr(main.time, "time", lambda: later)
     assert main.take_queue(queue) == ["12", "34"]
 
 
@@ -661,3 +665,24 @@ def test_application_reuses_the_dry_run_options(main, monkeypatch, tmp_path):
     opts = run_options(choices=str(dry / "choices.json"))
     main.run(opts)
     assert opts.replace is True and opts.posters is True and opts.fix_locked_quebec is False
+
+
+def test_a_queued_title_retried_later_is_not_an_error(main, monkeypatch, tmp_path):
+    """Regression: every retry of a queued title ended with an error notification."""
+    class Plex:
+        friendlyName, version = "Fake", "1"
+
+        class library:
+            @staticmethod
+            def sections():
+                return []
+
+        def fetchItem(self, key):
+            raise RuntimeError("503 Server Error")
+
+    monkeypatch.setattr(main, "PlexServer", lambda *a, **k: Plex())
+    monkeypatch.setattr(main, "HEALTHCHECK_URL", "")
+    monkeypatch.setattr(main, "QUEUE_PATH", str(tmp_path / "queue.txt"))
+    opts = run_options(apply=False, rating_keys=["555"])
+    opts.queued = ["555"]
+    assert main.run(opts) == main.OK and opts.requeued == ["555"]
