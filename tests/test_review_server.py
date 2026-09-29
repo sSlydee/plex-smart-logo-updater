@@ -57,7 +57,7 @@ def test_login_is_required(server):
     assert request(base + "/", auth=None)[0] == 401
     assert request(base + "/", auth=("plex", "wrong"))[0] == 401
     status, body = request(base + "/")
-    assert status == 200 and RUN in body and "1 change(s) to review" in body
+    assert status == 200 and RUN in body and "1 to review" in body
 
 
 def test_only_dry_run_folders_are_served(server):
@@ -100,7 +100,7 @@ def test_apply_runs_once_and_reports_its_output(server):
         threading.Event().wait(0.05)
     assert status["state"] == "done" and status["exit"] == 0
     assert "--choices" in status["output"] and "TOTAL" in status["output"]
-    assert "applied" in request(base + "/")[1]
+    assert "Applied" in request(base + "/")[1]
 
 
 def test_outdated_dry_run_cannot_be_applied(server):
@@ -133,3 +133,13 @@ def test_command_line_application_marks_the_dry_run(main, tmp_path):
     other.mkdir()
     main.mark_applied(str(other / "choices.json"), str(tmp_path / "x_application"))
     assert not (other / "applied.json").exists()
+
+
+def test_newer_run_with_the_same_changes_supersedes(server):
+    rs, base, logs = server
+    newer = logs / "2026-09-30_06h00m01_simulation"
+    newer.mkdir()
+    page = (logs / RUN / "review.html").read_text()
+    (newer / "review.html").write_text(page)  # same change "7"
+    (newer / "_summary.txt").write_text("  Selected    : 1 title(s) from 1 ratingKey(s)\n")
+    assert json.loads(request(base + f"/run/{RUN}/status")[1])["outdated"] is True

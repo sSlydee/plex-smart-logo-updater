@@ -3,6 +3,12 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.6.1] - 2026-09-29
+
+### Changed
+- Review server home page redesigned to match the review page (same colors, dark mode): dry runs to review as cards with a preview of the new images and their titles, then a compact history with status badges. The review pages get a "← All dry runs" link.
+- A dry run is also superseded by a newer one proposing the same changes, so a title is never listed twice.
+
 ## [1.6.0] - 2026-09-29
 
 ### Added
@@ -99,6 +105,7 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.6.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.1
 [1.6.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.0
 [1.5.2]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.5.2
 [1.5.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.5.1

@@ -31,6 +31,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import envfile
+import html_report
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 envfile.load_into_environ(os.environ.get("PLEX_CONFIG", os.path.join(HERE, "config.env")))
@@ -96,13 +97,24 @@ def is_full_run(folder):
 
 def outdated(folder):
     """
-    True when a newer FULL dry run exists: its review page covers the same titles
-    with fresher data, so this one must not be applied any more. Targeted runs
-    (a new title added by Tautulli) stay valid until the next full run.
+    True when a newer dry run supersedes this one: a FULL dry run (it covers every
+    title with fresher data), or a targeted one proposing all the same changes.
+    Other targeted runs (a new title added by Tautulli) stay valid until then.
     """
     name = os.path.basename(folder)
-    return any(n > name and RUN_NAME.match(n) and is_full_run(os.path.join(LOGS_DIR, n))
-               for n in os.listdir(LOGS_DIR))
+    mine = None
+    for n in os.listdir(LOGS_DIR):
+        other = os.path.join(LOGS_DIR, n)
+        if n <= name or not RUN_NAME.match(n):
+            continue
+        if is_full_run(other):
+            return True
+        if os.path.isfile(os.path.join(other, "review.html")):
+            if mine is None:
+                mine = set(summary(folder)["ids"])
+            if mine and mine <= set(summary(other)["ids"]):
+                return True
+    return False
 
 
 def status(folder):
@@ -157,7 +169,11 @@ def start_apply(folder, choices):
 
 
 def summary(folder):
-    """(changes to review, titles to handle by hand) from the data embedded in review.html."""
+    """
+    What a dry run's review page holds: changes to review, titles to do by hand,
+    their titles, libraries and a few "after" thumbnails (read from the data
+    embedded in review.html, cached by modification time).
+    """
     page = os.path.join(folder, "review.html")
     mtime = os.path.getmtime(page)
     cached = _SUMMARIES.get(page)
@@ -170,36 +186,125 @@ def summary(folder):
         cards = json.loads(match.group(1).replace("<\\/", "</"))["cards"] if match else []
     except ValueError:
         cards = []
-    result = (sum(1 for c in cards if c.get("decidable")), sum(1 for c in cards if not c.get("decidable")))
+    todo = [c for c in cards if c.get("decidable")]
+    result = {
+        "todo": len(todo),
+        "ids": sorted(c.get("id") for c in todo),
+        "manual": len(cards) - len(todo),
+        "titles": [c.get("title", "") for c in todo] or [c.get("title", "") for c in cards],
+        "libraries": sorted({c.get("library", "") for c in cards if c.get("library")}),
+        "thumbs": [(c.get("after"), c.get("asset") == "poster") for c in todo if c.get("after")][:4],
+    }
     _SUMMARIES[page] = (mtime, result)
     return result
 
 
+DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
+
+
+def run_date(name):
+    """"2026-09-29_21h02m52_simulation" -> "Tue 29 Sep · 21:02"."""
+    try:
+        t = time.strptime(name[:19], "%Y-%m-%d_%Hh%Mm%S")
+    except ValueError:
+        return name
+    return f"{DAYS[t.tm_wday]} {t.tm_mday} {MONTHS[t.tm_mon - 1]} · {t.tm_hour:02d}:{t.tm_min:02d}"
+
+
+INDEX_CSS = """
+header { padding: 24px 16px 4px; max-width: 1200px; margin: 0 auto; }
+main { max-width: 1200px; margin: 0 auto; padding: 8px 16px 32px; }
+.sec { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 22px 0 10px; }
+.grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
+a { color: inherit; text-decoration: none; }
+.run { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+  border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 10px; transition: transform .1s; }
+.run:hover { transform: translateY(-1px); border-color: var(--accent); }
+.run-head { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+.run-date { font-weight: 700; font-size: 16px; }
+.pill { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px; white-space: nowrap;
+  background: var(--bg); color: var(--muted); }
+.pill.todo { background: var(--accent); color: #fff; }
+.pill.ok { background: var(--ok-bg); color: var(--ok); }
+.pill.no { background: var(--no-bg); color: var(--no); }
+.pill.warn { background: var(--warn-bg); color: var(--warn); }
+.thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.thumb { background: var(--logo-bg); border-radius: 8px; height: 64px; display: flex; align-items: center;
+  justify-content: center; padding: 5px; }
+.thumb.poster { height: 110px; }
+.thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.run-titles { margin: 0; padding: 0; list-style: none; font-size: 13px; color: var(--muted); }
+.run-titles li { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.run-titles li::before { content: "• "; }
+.run .btn { text-align: center; margin-top: auto; }
+.empty { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--ok);
+  border-radius: 12px; padding: 18px; color: var(--muted); }
+.empty b { color: var(--ok); }
+.rows { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.row { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); }
+.row:first-child { border-top: 0; }
+.row:hover { background: var(--bg); }
+.row .when { font-weight: 600; min-width: 150px; }
+.row .what { flex: 1; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row .pills { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+@media (max-width: 560px) { .row { flex-wrap: wrap; } .row .when { min-width: 0; } .row .what { flex-basis: 100%; order: 3; } }
+"""
+
+
 def index_page():
     names = sorted((n for n in os.listdir(LOGS_DIR) if run_dir(n)), reverse=True)[:30]
-    rows = []
+    todo_cards, rows = [], []
     for name in names:
         folder = os.path.join(LOGS_DIR, name)
-        todo, manual = summary(folder)
+        info = summary(folder)
         st = status(folder)
+        esc = html.escape
+        kind = "Full scan" if is_full_run(folder) else "New title (Tautulli)"
+        where = " · ".join(info["libraries"][:3]) + (" …" if len(info["libraries"]) > 3 else "")
+        pills = []
         if st["state"] == "running":
-            label = "applying…"
+            pills.append('<span class="pill warn">Applying…</span>')
         elif st["state"] == "done":
-            label = "applied" if st["exit"] == 0 else "application failed"
+            pills.append('<span class="pill ok">Applied</span>' if st["exit"] == 0
+                         else '<span class="pill no">Application failed</span>')
         elif st.get("outdated"):
-            label = "outdated (a newer dry run exists)"
-        elif todo:
-            label = f"<b>{todo} change(s) to review</b>"
+            pills.append('<span class="pill">Outdated</span>')
+        elif info["todo"]:
+            pills.append(f'<span class="pill todo">{info["todo"]} to review</span>')
         else:
-            label = "nothing to review"
-        extra = f", {manual} to do by hand" if manual else ""
-        rows.append(f'<li><a href="run/{html.escape(name)}/">{html.escape(name)}</a> — {label}{extra}</li>')
-    body = "<ul>" + "".join(rows) + "</ul>" if rows else "<p>No dry run with a review page yet.</p>"
-    return f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1"><title>Plex logo review</title>
-<style>body{{font:15px/1.5 system-ui,sans-serif;max-width:760px;margin:24px auto;padding:0 16px;color:#1d2330}}
-a{{color:#2f5fd0}} li{{margin:6px 0}}</style></head>
-<body><h1>Plex logo review</h1><p>Latest dry runs (newest first):</p>{body}</body></html>"""
+            pills.append('<span class="pill">Nothing to review</span>')
+        if info["manual"]:
+            pills.append(f'<span class="pill warn">{info["manual"]} by hand</span>')
+        actionable = st["state"] == "none" and not st.get("outdated") and info["todo"]
+        if actionable:
+            thumbs = "".join(f'<div class="thumb{" poster" if poster else ""}"><img src="{esc(src)}" alt=""></div>'
+                             for src, poster in info["thumbs"])
+            titles = "".join(f"<li>{esc(t)}</li>" for t in info["titles"][:4])
+            more = len(info["titles"]) - 4
+            if more > 0:
+                titles += f"<li>and {more} more</li>"
+            todo_cards.append(
+                f'<a class="run" href="run/{esc(name)}/"><div class="run-head"><div>'
+                f'<div class="run-date">{esc(run_date(name))}</div><div class="lib">{esc(kind)}'
+                f'{" · " + esc(where) if where else ""}</div></div><div>{"".join(pills)}</div></div>'
+                + (f'<div class="thumbs">{thumbs}</div>' if thumbs else "")
+                + f'<ul class="run-titles">{titles}</ul><span class="btn primary">Open the review →</span></a>')
+        else:
+            what = ", ".join(info["titles"][:3]) or where or kind
+            rows.append(f'<a class="row" href="run/{esc(name)}/"><span class="when">{esc(run_date(name))}</span>'
+                        f'<span class="what">{esc(kind)} — {esc(what)}</span><span class="pills">{"".join(pills)}</span></a>')
+    to_review = ('<div class="grid">' + "".join(todo_cards) + "</div>") if todo_cards else \
+        '<div class="empty"><b>✓ All caught up.</b> Nothing waits for your review.</div>'
+    history = f'<h2 class="sec">History</h2><div class="rows">{"".join(rows)}</div>' if rows else ""
+    return f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plex logo review</title>
+<style>{html_report.THEME_CSS}{INDEX_CSS}</style></head>
+<body><header><h1>Plex logo review</h1>
+<div class="sub">Latest dry runs · open one to approve its changes and apply them</div></header>
+<main><h2 class="sec">To review</h2>{to_review}{history}</main></body></html>"""
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -260,8 +365,12 @@ class Handler(BaseHTTPRequestHandler):
         if match.group(2) is None:
             with open(os.path.join(folder, "review.html"), encoding="utf-8") as f:
                 page = f.read()
-            inject = f"<script>window.REVIEW_SERVER = {json.dumps({'token': TOKEN})};</script>\n"
-            return self.send(200, page.replace("</head>", inject + "</head>", 1))
+            inject = (f"<script>window.REVIEW_SERVER = {json.dumps({'token': TOKEN})};</script>\n"
+                      "<style>.back { display: inline-block; font-size: 13px; color: var(--accent);"
+                      " text-decoration: none; margin-bottom: 8px; }</style>\n")
+            page = page.replace("</head>", inject + "</head>", 1)
+            page = page.replace("<header>", '<header>\n  <a class="back" href="../../">← All dry runs</a>', 1)
+            return self.send(200, page)
         self.send(405, "Method not allowed", "text/plain; charset=utf-8")
 
     def do_POST(self):

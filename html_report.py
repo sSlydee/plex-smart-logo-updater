@@ -17,6 +17,34 @@ THUMB_SIZE = (480, 150)
 POSTER_THUMB_SIZE = (200, 300)
 
 
+# Colors and shared components, also used by the review server's home page (review_server.py)
+THEME_CSS = r""":root {
+  --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5f6878; --line: #dde1e7;
+  --ok: #1f8a4c; --ok-bg: #e5f5ec; --no: #c23b32; --no-bg: #fbe9e7;
+  --accent: #2f5fd0; --warn: #a86400; --warn-bg: #fff3dc; --qc: #7a3fc4; --qc-bg: #f1e9fb;
+  --logo-bg: #2b2f36;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171c; --panel: #1d2128; --text: #e7eaf0; --muted: #9aa3b2; --line: #2e343d;
+    --ok: #4cc27f; --ok-bg: #173826; --no: #f07268; --no-bg: #40201e;
+    --accent: #7ea2ff; --warn: #f0b04a; --warn-bg: #3a2c12; --qc: #b98cf2; --qc-bg: #2d2140;
+    --logo-bg: #2b2f36;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+h1 { font-size: 22px; margin: 0 0 4px; }
+.sub { color: var(--muted); font-size: 13px; }
+.lib { color: var(--muted); font-size: 12px; }
+.badge { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 5px; background: var(--bg); color: var(--muted); }
+.btn { border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; border: 1px solid var(--line);
+  background: var(--panel); color: var(--text); font-size: 14px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+"""
+
+
 def thumbnail(img, poster=False):
     """WebP thumbnail as a data URI."""
     img = img.copy()
@@ -57,7 +85,7 @@ def write(path, run_dir, apply, cards):
         "cards": cards,
     }
     payload = json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
-    page = TEMPLATE.replace("__DATA__", payload).replace("__TITLE__", html.escape(run_dir))
+    page = TEMPLATE.replace("__THEME__", THEME_CSS).replace("__DATA__", payload).replace("__TITLE__", html.escape(run_dir))
     with open(path, "w", encoding="utf-8") as f:
         f.write(page)
 
@@ -69,26 +97,8 @@ TEMPLATE = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Logo review</title>
 <style>
-:root {
-  --bg: #f6f7f9; --panel: #ffffff; --text: #1d2330; --muted: #5f6878; --line: #dde1e7;
-  --ok: #1f8a4c; --ok-bg: #e5f5ec; --no: #c23b32; --no-bg: #fbe9e7;
-  --accent: #2f5fd0; --warn: #a86400; --warn-bg: #fff3dc; --qc: #7a3fc4; --qc-bg: #f1e9fb;
-  --logo-bg: #2b2f36;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #14171c; --panel: #1d2128; --text: #e7eaf0; --muted: #9aa3b2; --line: #2e343d;
-    --ok: #4cc27f; --ok-bg: #173826; --no: #f07268; --no-bg: #40201e;
-    --accent: #7ea2ff; --warn: #f0b04a; --warn-bg: #3a2c12; --qc: #b98cf2; --qc-bg: #2d2140;
-    --logo-bg: #2b2f36;
-  }
-}
-* { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text);
-  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding-bottom: 90px; }
+__THEME__body { padding-bottom: 90px; }
 header { padding: 24px 16px 8px; max-width: 1200px; margin: 0 auto; }
-h1 { font-size: 22px; margin: 0 0 4px; }
-.sub { color: var(--muted); font-size: 13px; }
 .steps { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin: 14px 0 0; }
 .steps ol { margin: 6px 0 0; padding-left: 20px; }
 .steps code { background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 13px; word-break: break-all; }
@@ -109,9 +119,7 @@ main { max-width: 1200px; margin: 0 auto; padding: 12px 16px; display: grid; gap
 .card.no { border-left-color: var(--no); opacity: .72; }
 .card.info { border-left-color: var(--warn); }
 .card h2 { font-size: 15px; margin: 0; }
-.lib { color: var(--muted); font-size: 12px; }
 .badges { display: flex; flex-wrap: wrap; gap: 5px; }
-.badge { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 5px; background: var(--bg); color: var(--muted); }
 .badge.qc { background: var(--qc-bg); color: var(--qc); }
 .badge.warn { background: var(--warn-bg); color: var(--warn); }
 .logos { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; align-items: center; }
@@ -138,9 +146,6 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
 .foot-in { max-width: 1200px; margin: 0 auto; padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
 .counts { flex: 1 1 200px; font-size: 14px; }
 .counts .o { color: var(--ok); font-weight: 700; } .counts .x { color: var(--no); font-weight: 700; }
-.btn { border-radius: 8px; padding: 8px 14px; font-weight: 600; cursor: pointer; border: 1px solid var(--line);
-  background: var(--panel); color: var(--text); font-size: 14px; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .applystatus { margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: var(--panel);
   border: 1px solid var(--line); }
 .applystatus.ok { border-color: var(--ok); background: var(--ok-bg); }

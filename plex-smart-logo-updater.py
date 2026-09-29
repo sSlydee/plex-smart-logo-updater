@@ -62,7 +62,7 @@ import notify as notifier
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-__version__ = "1.6.0"
+__version__ = "1.6.1"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
