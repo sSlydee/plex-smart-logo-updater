@@ -358,3 +358,28 @@ def test_cron_lines_are_told_apart(configure):
     assert configure.is_run_line(run_line) and configure.is_run_line(old_run_line)
     assert not configure.is_run_line(queue_line)
     assert not configure.is_run_line("*/3 * * * * other-script.py")
+
+
+# --- outcome of a run (exit code) ------------------------------------------------
+
+def run_options(**kw):
+    import argparse
+    values = dict(apply=True, choices=None, html=False, rating_keys=None, notify=False, quiet=True,
+                  replace=False, include_locked=False, fix_locked_quebec=False, posters=False)
+    values.update(kw)
+    return argparse.Namespace(**values)
+
+
+def test_unreachable_plex_is_a_failed_run(main, monkeypatch):
+    """Regression: a run stopped on a connection error exited with 0, so the review server showed it applied."""
+    def refuse(*a, **k):
+        raise ConnectionError("connection refused")
+    monkeypatch.setattr(main, "PlexServer", refuse)
+    monkeypatch.setattr(main, "HEALTHCHECK_URL", "")
+    assert main.run(run_options()) == main.STOPPED != 0
+
+
+def test_requeue_puts_titles_back(main, tmp_path):
+    queue = str(tmp_path / "queue.txt")
+    main.requeue(["12", "34"], queue)
+    assert main.take_queue(queue) == ["12", "34"]

@@ -1239,7 +1239,19 @@ def review_link(run_dir):
     return os.path.join(run_dir, "review.html")
 
 
+# Outcome of run(), turned into the exit code: the review server shows a non-zero code
+# as a failed application that can be applied again
+OK, ERRORS, STOPPED = 0, 2, 1
+
+
+def requeue(keys, path=None):
+    """Puts ratingKeys back in the Tautulli queue (the run that took them could not process them)."""
+    with open(path or QUEUE_PATH, "a", encoding="utf-8") as f:
+        f.write("".join(f"{k}\n" for k in keys))
+
+
 def run(opts):
+    """Returns OK, ERRORS (some titles failed) or STOPPED (Plex unreachable, token rejected)."""
     start = time.time()
     opts.posters = getattr(opts, "posters", False) or CHECK_POSTERS
     mode = "application" if opts.apply else "simulation"
@@ -1266,7 +1278,7 @@ def run(opts):
         server = f"{plex.friendlyName} (Plex {plex.version})"
     except Exception as e:
         stop(opts, summary, e)
-        return
+        return STOPPED
 
     write_header(summary, "OVERALL SUMMARY — Plex logos", opts,
                  [f"Server      : {server}", f"Folder      : {run_dir}"])
@@ -1312,7 +1324,7 @@ def run(opts):
             log(f"\n[!] Stopped: {e}")
             log.close()
             stop(opts, summary, e)
-            return
+            return STOPPED
         write_library_summary(log, name, results, opts, time.time() - lib_start)
         log.close()
         OCR.save()
@@ -1395,6 +1407,7 @@ def run(opts):
                      f"{len(totals['error'])} error(s)" if totals["error"]
                      else f"{to_do} change(s) to review" if to_do and not opts.apply
                      else "ok", time.time() - start)
+    return ERRORS if totals["error"] else OK
 
 
 def select_titles(plex, rating_keys, summary):
@@ -1737,6 +1750,7 @@ if __name__ == "__main__":
         with run_lock():
             undo(options)
     else:
+        queued = []
         try:
             with run_lock():
                 if options.process_queue:
@@ -1744,8 +1758,13 @@ if __name__ == "__main__":
                     if not queued:
                         raise SystemExit(0)  # nothing queued: no run, no log, no ping
                     options.rating_keys = (options.rating_keys or []) + queued
-                run(options)
+                outcome = run(options)
+                if outcome == STOPPED and queued:
+                    requeue(queued)  # Plex unreachable: try these titles again next time
         except Exception as crash:
+            if queued:
+                requeue(queued)
             # Unexpected crash: tell the monitoring before showing the traceback
             ping_healthcheck(False, f"crash: {type(crash).__name__}: {crash}")
             raise
+        raise SystemExit(outcome)
