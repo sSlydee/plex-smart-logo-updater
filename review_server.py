@@ -16,8 +16,12 @@ from config.env, like the main script:
 
 Run it with: .venv/bin/python review_server.py (configure.py --review-server
 installs it as a systemd user service).
+
+Signing in (login page) opens a session for 30 days (cookie). Changing the
+password signs every session out. HTTP Basic auth also works, for scripts.
 """
 import base64
+import hashlib
 import hmac
 import html
 import json
@@ -29,6 +33,7 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, quote
 
 import envfile
 import html_report
@@ -53,6 +58,38 @@ MAX_BODY = 5 * 1024 * 1024
 TOKEN = secrets.token_urlsafe(24)
 _LOCK = threading.Lock()
 _SUMMARIES = {}  # review.html path -> (mtime, summary), so the index does not re-read big pages
+
+COOKIE = "plexlogo_session"
+SESSION_DAYS = 30
+# Sessions are signed with a key derived from the login: changing the password signs everyone out
+SESSION_KEY = hashlib.sha256(f"plex-smart-logo-updater session\0{USER}\0{PASSWORD}".encode()).digest()
+MAX_FAILURES = 10           # failed sign-ins per address...
+FAILURE_WINDOW = 15 * 60    # ...within this window, then sign-in is refused for a while
+_FAILURES = {}
+
+
+def new_session():
+    expiry = str(int(time.time()) + SESSION_DAYS * 86400)
+    return expiry + "." + hmac.new(SESSION_KEY, expiry.encode(), hashlib.sha256).hexdigest()
+
+
+def valid_session(value):
+    expiry, _, sig = (value or "").partition(".")
+    if not expiry.isdigit() or int(expiry) < time.time():
+        return False
+    return hmac.compare_digest(sig, hmac.new(SESSION_KEY, expiry.encode(), hashlib.sha256).hexdigest())
+
+
+def too_many_failures(address):
+    now = time.time()
+    recent = [t for t in _FAILURES.get(address, []) if now - t < FAILURE_WINDOW]
+    _FAILURES[address] = recent
+    return len(recent) >= MAX_FAILURES
+
+
+def relative_root(path):
+    """Relative link to the server's root from a path: the server may live under a prefix (/logos/)."""
+    return "../" * (path.count("/") - 1) or "./"
 
 
 def run_dir(name):
@@ -248,6 +285,8 @@ a { color: inherit; text-decoration: none; }
 .row .when { font-weight: 600; min-width: 150px; }
 .row .what { flex: 1; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .pills { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.logout { float: right; font-size: 13px; color: var(--muted); margin-top: 6px; }
+.logout:hover { color: var(--accent); }
 @media (max-width: 560px) { .row { flex-wrap: wrap; } .row .when { min-width: 0; } .row .what { flex-basis: 100%; order: 3; } }
 """
 
@@ -302,9 +341,45 @@ def index_page():
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Plex logo review</title>
 <style>{html_report.THEME_CSS}{INDEX_CSS}</style></head>
-<body><header><h1>Plex logo review</h1>
+<body><header><a class="logout" href="logout">Sign out</a><h1>Plex logo review</h1>
 <div class="sub">Latest dry runs · open one to approve its changes and apply them</div></header>
 <main><h2 class="sec">To review</h2>{to_review}{history}</main></body></html>"""
+
+
+LOGIN_CSS = """
+body { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.login { width: 100%; max-width: 360px; background: var(--panel); border: 1px solid var(--line);
+  border-top: 4px solid var(--accent); border-radius: 14px; padding: 24px; }
+.login h1 { margin-bottom: 2px; }
+.login .sub { margin-bottom: 18px; }
+label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 5px; }
+input[type=text], input[type=password] { width: 100%; background: var(--bg); color: var(--text);
+  border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font-size: 15px; }
+input:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
+.login .btn { width: 100%; margin-top: 18px; padding: 11px; font-size: 15px; }
+.error { background: var(--no-bg); color: var(--no); border-radius: 8px; padding: 9px 12px; font-size: 13px; }
+.note { background: var(--ok-bg); color: var(--ok); border-radius: 8px; padding: 9px 12px; font-size: 13px; }
+"""
+
+
+def login_page(next_path="", message="", error=True):
+    box = f'<div class="{"error" if error else "note"}">{html.escape(message)}</div>' if message else ""
+    return f"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · Plex logo review</title>
+<style>{html_report.THEME_CSS}{LOGIN_CSS}</style></head>
+<body><form class="login" method="post" action="login">
+<h1>Plex logo review</h1><div class="sub">Sign in to review and apply the changes</div>{box}
+<input type="hidden" name="next" value="{html.escape(next_path)}">
+<label for="user">Login</label><input type="text" id="user" name="user" autocomplete="username" autocapitalize="none" required>
+<label for="password">Password</label>
+<input type="password" id="password" name="password" autocomplete="current-password" required autofocus>
+<button class="btn primary" type="submit">Sign in</button></form></body></html>"""
+
+
+# Where to go after signing in: only the home page or a dry run's page (no open redirect)
+NEXT_PATH = re.compile(r"^(run/[^/]+/)?$")
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -313,16 +388,32 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         sys.stderr.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {self.address_string()} {fmt % args}\n")
 
+    def cookie(self, name):
+        for part in self.headers.get("Cookie", "").split(";"):
+            key, _, value = part.strip().partition("=")
+            if key == name:
+                return value
+        return None
+
+    def client(self):
+        # Behind the reverse proxy, the client's address is in X-Forwarded-For
+        return (self.headers.get("X-Forwarded-For") or self.client_address[0]).split(",")[0].strip()
+
+    def credentials_ok(self, user, password):
+        ok_user = hmac.compare_digest(user.encode(), USER.encode())
+        ok_password = hmac.compare_digest(password.encode(), PASSWORD.encode())
+        return ok_user and ok_password
+
     def authorized(self):
+        if valid_session(self.cookie(COOKIE)):
+            return True
         header = self.headers.get("Authorization", "")
         if header.startswith("Basic "):
             try:
                 user, _, password = base64.b64decode(header[6:]).decode("utf-8").partition(":")
             except ValueError:
                 return False
-            ok_user = hmac.compare_digest(user.encode(), USER.encode())
-            ok_password = hmac.compare_digest(password.encode(), PASSWORD.encode())
-            return ok_user and ok_password
+            return self.credentials_ok(user, password)
         return False
 
     def send(self, code, body, content_type="text/html; charset=utf-8", headers=()):
@@ -341,17 +432,34 @@ class Handler(BaseHTTPRequestHandler):
     def send_json(self, code, obj):
         self.send(code, json.dumps(obj), "application/json")
 
-    def check(self):
+    def check(self, path):
+        """True when signed in; otherwise sends the sign-in page (or a JSON error for the page's requests)."""
         if self.authorized():
             return True
-        self.send(401, "Login required", "text/plain; charset=utf-8",
-                  [("WWW-Authenticate", 'Basic realm="Plex logo review", charset="UTF-8"')])
+        if path.endswith(("/status", "/apply")):
+            self.send_json(401, {"error": "you were signed out: reload the page and sign in again"})
+        else:
+            target = relative_root(path) + "login?next=" + quote(path.lstrip("/"))
+            self.send(303, "", headers=[("Location", target)])
         return False
 
+    def session_cookie(self, value, max_age):
+        secure = "; Secure" if self.headers.get("X-Forwarded-Proto", "") == "https" else ""
+        return ("Set-Cookie", f"{COOKIE}={value}; Max-Age={max_age}; HttpOnly; SameSite=Lax{secure}")
+
     def do_GET(self):
-        if not self.check():
-            return
         path = self.path.split("?", 1)[0]
+        if path == "/login":
+            query = parse_qs(self.path.partition("?")[2])
+            next_path = query.get("next", [""])[0]
+            if self.authorized():
+                return self.send(303, "", headers=[("Location", "./" + (next_path if NEXT_PATH.match(next_path) else ""))])
+            message = "You are signed out." if "out" in query else ""
+            return self.send(200, login_page(next_path if NEXT_PATH.match(next_path) else "", message, error=False))
+        if path == "/logout":
+            return self.send(303, "", headers=[("Location", "login?out=1"), self.session_cookie("", 0)])
+        if not self.check(path):
+            return
         if path in ("/", ""):
             return self.send(200, index_page())
         match = ROUTE.match(path)
@@ -374,9 +482,12 @@ class Handler(BaseHTTPRequestHandler):
         self.send(405, "Method not allowed", "text/plain; charset=utf-8")
 
     def do_POST(self):
-        if not self.check():
+        path = self.path.split("?", 1)[0]
+        if path == "/login":
+            return self.sign_in()
+        if not self.check(path):
             return
-        match = ROUTE.match(self.path.split("?", 1)[0])
+        match = ROUTE.match(path)
         folder = run_dir(match.group(1)) if match and match.group(2) == "apply" else None
         if folder is None:
             return self.send_json(404, {"error": "not found"})
@@ -396,6 +507,23 @@ class Handler(BaseHTTPRequestHandler):
         if error:
             return self.send_json(409, {"error": error})
         self.send_json(200, {"state": "running"})
+
+
+    def sign_in(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        form = parse_qs(self.rfile.read(min(length, 10000)).decode("utf-8", "replace")) if length else {}
+        next_path = form.get("next", [""])[0]
+        next_path = next_path if NEXT_PATH.match(next_path) else ""
+        address = self.client()
+        if too_many_failures(address):
+            return self.send(429, login_page(next_path, "Too many failed attempts: try again in 15 minutes."))
+        if self.credentials_ok(form.get("user", [""])[0], form.get("password", [""])[0]):
+            _FAILURES.pop(address, None)
+            return self.send(303, "", headers=[("Location", "./" + next_path),
+                                               self.session_cookie(new_session(), SESSION_DAYS * 86400)])
+        _FAILURES.setdefault(address, []).append(time.time())
+        time.sleep(1)  # slows down password guessing
+        self.send(401, login_page(next_path, "Wrong login or password."))
 
 
 def main():

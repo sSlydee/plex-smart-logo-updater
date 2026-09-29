@@ -3,6 +3,11 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.6.2] - 2026-09-29
+
+### Changed
+- The review server has a sign-in page (in the style of the review page) instead of the browser's login prompt, with a "Sign out" link. The session lasts 30 days, changing the password signs everyone out, and sign-in is refused for 15 minutes after 10 failed attempts. HTTP Basic auth still works for scripts.
+
 ## [1.6.1] - 2026-09-29
 
 ### Changed
@@ -105,6 +110,7 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.6.2]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.2
 [1.6.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.1
 [1.6.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.0
 [1.5.2]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.5.2

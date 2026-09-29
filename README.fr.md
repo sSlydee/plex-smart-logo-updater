@@ -209,7 +209,7 @@ location /logos/ {
 }
 ```
 
-- Le serveur n'écoute que sur `127.0.0.1` : on y accède par votre reverse proxy, en HTTPS. Chaque page demande l'identifiant et le mot de passe. Si votre proxy ajoute sa propre authentification, désactivez-la pour cette adresse (`auth_basic off;` avec nginx).
+- Le serveur n'écoute que sur `127.0.0.1` : on y accède par votre reverse proxy, en HTTPS. Une page de connexion protège chaque page ; la session dure 30 jours, et changer le mot de passe déconnecte tout le monde. Après 10 essais ratés, la connexion est refusée pendant 15 minutes. Si votre proxy ajoute sa propre authentification, désactivez-la pour cette adresse (`auth_basic off;` avec nginx).
 - La page d'accueil liste les dernières simulations. Une simulation ne peut être appliquée qu'une fois, et plus du tout quand une simulation complète plus récente existe : appliquez plutôt celle-ci.
 - Les notifications pointent vers la page sur le serveur (`REVIEW_URL`) au lieu du chemin du fichier.
 

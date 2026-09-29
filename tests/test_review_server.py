@@ -6,6 +6,7 @@ import os
 import sys
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 
 import pytest
@@ -52,12 +53,78 @@ def request(url, auth=("plex", "secret"), data=None, headers=None):
         return e.code, e.read().decode()
 
 
-def test_login_is_required(server):
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+
+def raw(url, data=None, headers=None):
+    """Request without following redirects: (status, headers, body)."""
+    req = urllib.request.Request(url, data=data, headers=dict(headers or {}))
+    try:
+        with urllib.request.build_opener(NoRedirect).open(req, timeout=10) as r:
+            return r.status, r.headers, r.read().decode()
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers, e.read().decode()
+
+
+def sign_in(base, user="plex", password="secret", next_path=""):
+    form = urllib.parse.urlencode({"user": user, "password": password, "next": next_path}).encode()
+    return raw(base + "/login", data=form, headers={"Content-Type": "application/x-www-form-urlencoded"})
+
+
+def test_signed_out_visitors_get_the_login_page(server):
     _, base, _ = server
-    assert request(base + "/", auth=None)[0] == 401
-    assert request(base + "/", auth=("plex", "wrong"))[0] == 401
-    status, body = request(base + "/")
-    assert status == 200 and RUN in body and "1 to review" in body
+    status, headers, _ = raw(base + f"/run/{RUN}/")
+    assert status == 303 and headers["Location"] == f"../../login?next=run/{RUN}/"
+    status, _, body = raw(base + "/login")
+    assert status == 200 and 'type="password"' in body
+    assert raw(base + f"/run/{RUN}/status")[0] == 401
+    assert request(base + "/", auth=("plex", "wrong"))[0] in (303, 200)  # Basic auth: wrong -> login page
+
+
+def test_sign_in_opens_a_session(server):
+    _, base, _ = server
+    status, headers, _ = sign_in(base, next_path=f"run/{RUN}/")
+    assert status == 303 and headers["Location"] == f"./run/{RUN}/"
+    cookie = headers["Set-Cookie"].split(";")[0]
+    assert "HttpOnly" in headers["Set-Cookie"] and "SameSite=Lax" in headers["Set-Cookie"]
+    status, _, body = raw(base + "/", headers={"Cookie": cookie})
+    assert status == 200 and "1 to review" in body and "Sign out" in body
+    # a forged or expired session does not work
+    assert raw(base + "/", headers={"Cookie": "plexlogo_session=9999999999.forged"})[0] == 303
+    assert raw(base + "/", headers={"Cookie": "plexlogo_session=1.x"})[0] == 303
+
+
+def test_wrong_password_and_open_redirect(server, monkeypatch):
+    rs, base, _ = server
+    monkeypatch.setattr(rs.time, "sleep", lambda s: None)  # no 1 s penalty in tests
+    status, _, body = sign_in(base, password="wrong")
+    assert status == 401 and "Wrong login or password" in body
+    status, headers, _ = sign_in(base, next_path="https://evil.example/")
+    assert status == 303 and headers["Location"] == "./"
+
+
+def test_too_many_failed_sign_ins(server, monkeypatch):
+    rs, base, _ = server
+    monkeypatch.setattr(rs.time, "sleep", lambda s: None)
+    for _ in range(rs.MAX_FAILURES):
+        sign_in(base, password="wrong")
+    status, _, body = sign_in(base)  # even the right password is refused for a while
+    assert status == 429 and "Too many" in body
+
+
+def test_sign_out(server):
+    _, base, _ = server
+    status, headers, _ = raw(base + "/logout")
+    assert status == 303 and "Max-Age=0" in headers["Set-Cookie"]
+
+
+def test_changing_the_password_signs_everyone_out(server, monkeypatch):
+    rs, base, _ = server
+    cookie = sign_in(base)[1]["Set-Cookie"].split(";")[0]
+    monkeypatch.setattr(rs, "SESSION_KEY", b"key derived from a new password")
+    assert raw(base + "/", headers={"Cookie": cookie})[0] == 303
 
 
 def test_only_dry_run_folders_are_served(server):
