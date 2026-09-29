@@ -58,6 +58,24 @@ def _json(session, url, title, body):
 SENDERS = {"discord": _discord, "bark": _bark, "json": _json}
 
 
+def hide(text, *urls):
+    """
+    An error text without the secret parts of these URLs. Errors do not always quote the
+    full URL: a connection error quotes only its path ("Max retries exceeded with url:
+    /api/webhooks/<id>/<token>"), so the path and each long path segment (tokens, keys)
+    are hidden too.
+    """
+    from urllib.parse import urlsplit
+    text = str(text)
+    for url in urls:
+        parts = urlsplit(url)
+        path_query = parts.path + ("?" + parts.query if parts.query else "")
+        secrets = [url, path_query, parts.path] + [seg for seg in parts.path.split("/") if len(seg) >= 8]
+        for secret in sorted({s for s in secrets if s and s != "/"}, key=len, reverse=True):
+            text = text.replace(secret, "<hidden>")
+    return text
+
+
 def send(session, targets, title, body, markdown_body=None):
     """
     Sends the notification to every target. markdown_body (optional) is used for
@@ -72,7 +90,7 @@ def send(session, targets, title, body, markdown_body=None):
             results.append((kind, None))
         except Exception as e:
             # A webhook address is a secret: never copy it into the logs
-            results.append((kind, str(e).replace(url, f"<webhook {kind}>")))
+            results.append((kind, hide(e, url)))
     return results
 
 
@@ -99,4 +117,4 @@ def heartbeat(session, url, ok, message="", duration_seconds=None):
         r.raise_for_status()
         return None
     except Exception as e:
-        return str(e).replace(target, "<healthcheck URL>").replace(url, "<healthcheck URL>")
+        return hide(e, target, url)

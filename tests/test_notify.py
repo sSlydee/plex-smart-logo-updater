@@ -96,3 +96,26 @@ def test_heartbeat_healthchecks_style():
 def test_heartbeat_error_hides_the_url():
     error = notify.heartbeat(GetSession(status=500), "https://kuma.example.org/api/push/SECRET", True)
     assert error and "SECRET" not in error
+
+
+class FailingSession:
+    """Raises the error text requests gives for a connection error: only the URL path is quoted."""
+
+    def _fail(self, url, **kw):
+        from urllib.parse import urlsplit
+        parts = urlsplit(url)
+        path = parts.path + ("?" + parts.query if parts.query else "")
+        raise ConnectionError(f"HTTPSConnectionPool(host='{parts.hostname}', port=443): "
+                              f"Max retries exceeded with url: {path} (Caused by NameResolutionError)")
+
+    post = get = _fail
+
+
+def test_connection_errors_hide_the_secrets():
+    """Regression: connection errors quote only the URL path, which holds the webhook token / Bark key / push token."""
+    targets = [("discord", "https://discord.com/api/webhooks/123456789/SECRETWEBHOOKTOKEN"),
+               ("bark", "https://api.day.app/SECRETBARKKEY")]
+    for kind, error in notify.send(FailingSession(), targets, "T", "B"):
+        assert error and "SECRETWEBHOOKTOKEN" not in error and "SECRETBARKKEY" not in error
+    error = notify.heartbeat(FailingSession(), "https://kuma.example.org/api/push/SECRETPUSH1?status=up&msg=OK", False)
+    assert error and "SECRETPUSH1" not in error
