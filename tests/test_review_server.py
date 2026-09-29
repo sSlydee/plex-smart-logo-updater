@@ -343,3 +343,15 @@ def test_command_line_application_with_errors_can_be_retried(main, tmp_path):
     folder.mkdir()
     main.mark_applied(str(folder / "choices.json"), str(tmp_path / "x_application"), main.ERRORS)
     assert json.loads((folder / "applied.json").read_text())["exit"] == main.ERRORS
+
+
+def test_next_cannot_inject_headers(server):
+    """Regression: next= accepted CR/LF, which went into the Location header (response splitting)."""
+    _, base, _ = server
+    cookie = sign_in(base)[1]["Set-Cookie"].split(";")[0]
+    status, headers, _ = raw(base + "/login?next=run/x%0d%0aSet-Cookie:%20injected=1%0d%0aX-Evil:%20yes/",
+                             headers={"Cookie": cookie})
+    assert status == 303 and headers["Location"] == "./" and "X-Evil" not in headers
+    assert all("injected" not in v for v in headers.get_all("Set-Cookie") or [])
+    status, headers, _ = raw(base + f"/login?next=run/{RUN}/", headers={"Cookie": cookie})
+    assert headers["Location"] == f"./run/{RUN}/"
