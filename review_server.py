@@ -40,6 +40,10 @@ import html_report
 import runstate
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+# The environment before config.env is loaded: given to the applications, which read config.env
+# themselves (values already in the environment win), so a changed token or setting is used
+# without restarting this server
+LAUNCH_ENV = dict(os.environ)
 envfile.load_into_environ(os.environ.get("PLEX_CONFIG", os.path.join(HERE, "config.env")))
 
 LOGS_DIR = os.environ.get("PLEX_LOGS_DIR", os.path.join(HERE, "logs"))
@@ -309,7 +313,7 @@ def start_apply(folder, choices):
         try:
             proc = subprocess.Popen([sys.executable, SCRIPT, "--apply", "--choices", path, "--notify", "--quiet"],
                                     cwd=HERE, stdout=out, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                    start_new_session=True)
+                                    start_new_session=True, env=LAUNCH_ENV)
         except OSError as e:
             return f"cannot start the application: {e}"
         finally:

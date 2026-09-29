@@ -444,3 +444,17 @@ def test_result_is_used_when_the_server_restarted(server):
 def test_huge_session_expiry_does_not_crash(server):
     rs, _, _ = server
     assert rs.valid_session("9" * 5000 + ".ab.cd") is False
+
+
+def test_application_reads_the_current_config(server, monkeypatch):
+    """Regression: applications inherited the config loaded when the server started (old token after configure.py --token)."""
+    rs, base, _ = server
+    seen = {}
+
+    def fake_popen(args, **kw):
+        seen.update(kw.get("env") or {"inherited": "whole server environment"})
+        raise OSError("stop here")
+    monkeypatch.setattr(rs.subprocess, "Popen", fake_popen)
+    monkeypatch.setitem(rs.os.environ, "PLEX_TOKEN", "OLD-TOKEN-FROM-SERVER-START")
+    apply(base, rs)
+    assert "inherited" not in seen and seen.get("PLEX_TOKEN") != "OLD-TOKEN-FROM-SERVER-START"
