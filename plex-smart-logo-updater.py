@@ -1237,12 +1237,12 @@ def prune_logs():
         pass
 
 
-def mark_applied(choices_path, run_dir):
+def mark_applied(choices_path, run_dir, exit_code=0):
     """
     Records in the dry run's folder that its choices were applied (applied.json),
     so review_server.py does not offer to apply them again.
     """
-    runstate.mark_applied(os.path.dirname(os.path.abspath(choices_path)), run_dir)
+    runstate.mark_applied(os.path.dirname(os.path.abspath(choices_path)), run_dir, exit_code)
 
 
 def review_link(run_dir):
@@ -1413,7 +1413,7 @@ def run(opts):
 
     runstate.write_run_info(run_dir, targeted, [name for name, _ in per_library], complete=True)
     if opts.apply and opts.choices:
-        mark_applied(opts.choices, run_dir)
+        mark_applied(opts.choices, run_dir, ERRORS if totals["error"] else OK)
     if opts.notify:
         notify(opts, run_dir, totals, page, time.time() - start, ctx.pending)
     ping_healthcheck(not totals["error"],

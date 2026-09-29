@@ -55,12 +55,16 @@ def write_run_info(folder, targeted, libraries, complete):
         pass
 
 
-def mark_applied(dry_run_folder, application_folder):
-    """Records that a dry run's choices were applied from the command line (unless already recorded)."""
+def mark_applied(dry_run_folder, application_folder, exit_code=0):
+    """
+    Records that a dry run's choices were applied from the command line (unless already
+    recorded). A non-zero exit code (some titles failed) lets the review server offer to
+    apply it again.
+    """
     if not is_dry_run_folder(dry_run_folder) or read(dry_run_folder, APPLIED_FILE) is not None:
         return
     try:
-        write(dry_run_folder, APPLIED_FILE, {"started": now(), "finished": now(), "exit": 0, "pid": None,
+        write(dry_run_folder, APPLIED_FILE, {"started": now(), "finished": now(), "exit": exit_code, "pid": None,
                                              "application": os.path.basename(os.path.normpath(application_folder))})
     except OSError:
         pass

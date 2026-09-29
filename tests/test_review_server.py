@@ -335,3 +335,11 @@ def test_home_page_survives_a_pruned_folder(server, monkeypatch):
     monkeypatch.setattr(rs, "summary", lambda f: (_ for _ in ()).throw(FileNotFoundError(f)))
     assert request(base + "/")[0] == 200
     monkeypatch.setattr(rs, "summary", real)
+
+
+def test_command_line_application_with_errors_can_be_retried(main, tmp_path):
+    """Regression: an application with failed titles marked its dry run applied (exit 0): no retry from the page."""
+    folder = tmp_path / RUN
+    folder.mkdir()
+    main.mark_applied(str(folder / "choices.json"), str(tmp_path / "x_application"), main.ERRORS)
+    assert json.loads((folder / "applied.json").read_text())["exit"] == main.ERRORS
