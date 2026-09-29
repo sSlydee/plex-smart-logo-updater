@@ -382,3 +382,15 @@ def test_command_line_retry_replaces_a_failed_state(main, tmp_path):
     (folder / "applied.json").write_text(json.dumps({"exit": None, "pid": 123}))  # being applied: kept
     main.mark_applied(str(folder / "choices.json"), str(tmp_path / "x_application"), main.OK)
     assert json.loads((folder / "applied.json").read_text())["exit"] is None
+
+
+def test_each_sign_in_gets_its_own_session(server):
+    """Regression: two sign-ins in the same second got the same cookie; signing one out signed out both."""
+    rs, base, logs = server
+    first = sign_in(base)[1]["Set-Cookie"].split(";")[0]
+    second = sign_in(base)[1]["Set-Cookie"].split(";")[0]
+    assert first != second
+    sign_out(base, rs, first)
+    assert raw(base + "/", headers={"Cookie": second})[0] == 200
+    secret = logs / ".review-secret"
+    assert secret.exists() and oct(secret.stat().st_mode & 0o777) == "0o600"

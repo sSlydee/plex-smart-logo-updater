@@ -63,8 +63,32 @@ _SUMMARIES = {}  # review.html path -> (mtime, summary), so the index does not r
 
 COOKIE = "plexlogo_session"
 SESSION_DAYS = 30
-# Sessions are signed with a key derived from the login: changing the password signs everyone out
-SESSION_KEY = hashlib.sha256(f"plex-smart-logo-updater session\0{USER}\0{PASSWORD}".encode()).digest()
+SECRET_PATH = os.path.join(LOGS_DIR, ".review-secret")
+
+
+def server_secret():
+    """A random secret kept next to the logs (readable by the owner only), created on first start."""
+    try:
+        with open(SECRET_PATH, "rb") as f:
+            secret = f.read()
+        if len(secret) >= 32:
+            return secret
+    except OSError:
+        pass
+    secret = secrets.token_bytes(32)
+    try:
+        os.makedirs(LOGS_DIR, exist_ok=True)
+        fd = os.open(SECRET_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(secret)
+    except OSError as e:
+        sys.stderr.write(f"Cannot save the session secret ({e}): sessions end when the server restarts\n")
+    return secret
+
+
+# Sessions are signed with a key derived from a random server secret AND the login: a stolen
+# cookie does not allow guessing the password offline, and changing the password signs everyone out
+SESSION_KEY = hmac.new(server_secret(), f"{USER}\0{PASSWORD}".encode(), hashlib.sha256).digest()
 MAX_FAILURES = 10           # failed sign-ins per address...
 FAILURE_WINDOW = 15 * 60    # ...within this window, then sign-in is refused for a while
 _FAILURES = {}
@@ -81,9 +105,14 @@ _STATE_LOCK = threading.Lock()  # applied.json writes (status() and the thread w
 _PROCS = {}  # folder -> application started by this server process
 
 
+def session_signature(expiry, nonce):
+    return hmac.new(SESSION_KEY, f"{expiry}.{nonce}".encode(), hashlib.sha256).hexdigest()
+
+
 def new_session():
-    expiry = str(int(time.time()) + SESSION_DAYS * 86400)
-    return expiry + "." + hmac.new(SESSION_KEY, expiry.encode(), hashlib.sha256).hexdigest()
+    """"<expiry>.<random id>.<signature>": each sign-in gets its own session, revocable on its own."""
+    expiry, nonce = str(int(time.time()) + SESSION_DAYS * 86400), secrets.token_hex(12)
+    return f"{expiry}.{nonce}.{session_signature(expiry, nonce)}"
 
 
 def same_secret(given, expected):
@@ -92,18 +121,21 @@ def same_secret(given, expected):
 
 
 def valid_session(value):
-    expiry, _, sig = (value or "").partition(".")
+    parts = (value or "").split(".")
+    if len(parts) != 3:
+        return False
+    expiry, nonce, sig = parts
     # isascii(): str.isdigit() also accepts "²" or Arabic-Indic digits, which int() rejects
     if not (expiry.isascii() and expiry.isdigit()) or int(expiry) < time.time() or sig in _REVOKED:
         return False
-    return same_secret(sig, hmac.new(SESSION_KEY, expiry.encode(), hashlib.sha256).hexdigest())
+    return nonce.isascii() and same_secret(sig, session_signature(expiry, nonce))
 
 
 def revoke_session(value):
     """Signing out invalidates the session on the server too, not only in the browser."""
     if not valid_session(value):
         return
-    expiry, _, sig = value.partition(".")
+    expiry, _, sig = value.split(".")
     with _REVOKED_LOCK:
         now = time.time()
         for key in [k for k, v in _REVOKED.items() if v < now]:
