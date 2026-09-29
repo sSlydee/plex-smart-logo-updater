@@ -370,3 +370,15 @@ def test_failure_tracking_is_bounded(server, monkeypatch):
     for i in range(500):
         rs.record_failure(f"10.0.{i // 256}.{i % 256}")
     assert len(rs._FAILURES) <= 50
+
+
+def test_command_line_retry_replaces_a_failed_state(main, tmp_path):
+    """Regression: after a failed application from the page, a successful command-line retry left it 'failed'."""
+    folder = tmp_path / RUN
+    folder.mkdir()
+    (folder / "applied.json").write_text(json.dumps({"exit": 2, "pid": None}))
+    main.mark_applied(str(folder / "choices.json"), str(tmp_path / "x_application"), main.OK)
+    assert json.loads((folder / "applied.json").read_text())["exit"] == 0
+    (folder / "applied.json").write_text(json.dumps({"exit": None, "pid": 123}))  # being applied: kept
+    main.mark_applied(str(folder / "choices.json"), str(tmp_path / "x_application"), main.OK)
+    assert json.loads((folder / "applied.json").read_text())["exit"] is None

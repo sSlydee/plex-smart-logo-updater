@@ -61,7 +61,12 @@ def mark_applied(dry_run_folder, application_folder, exit_code=0):
     recorded). A non-zero exit code (some titles failed) lets the review server offer to
     apply it again.
     """
-    if not is_dry_run_folder(dry_run_folder) or read(dry_run_folder, APPLIED_FILE) is not None:
+    if not is_dry_run_folder(dry_run_folder):
+        return
+    current = read(dry_run_folder, APPLIED_FILE)
+    # Kept: an application started from the review server (running, or recorded as a success);
+    # replaced: a failed one, so a successful retry from the command line shows as applied
+    if current is not None and current.get("exit") in (None, 0):
         return
     try:
         write(dry_run_folder, APPLIED_FILE, {"started": now(), "finished": now(), "exit": exit_code, "pid": None,
