@@ -427,3 +427,18 @@ def test_library_errors_are_logged_without_the_token(main, monkeypatch, tmp_path
                               fix_locked_quebec=False, posters=False)
     results = main.process_library(None, FakeSection([Item()]), lines.append, opts, ctx, ["fr-FR", "en-US"])
     assert results["error"] and not any("SecretTok3n" in t for t in results["error"] + lines)
+
+
+def test_applying_an_old_dry_run_keeps_its_folder(main, monkeypatch, tmp_path):
+    """Regression: pruning at the start of an application could delete the folder of the choices being applied."""
+    logs = tmp_path / "logs"
+    old = logs / "2026-01-01_00h00m00_simulation"
+    newer = logs / "2026-01-02_00h00m00_simulation"
+    for folder in (old, newer):
+        folder.mkdir(parents=True)
+    monkeypatch.setattr(main, "LOGS_DIR", str(logs))
+    monkeypatch.setattr(main, "LOGS_KEEP", 1)
+    main.prune_logs(keep={str(old)})
+    assert old.exists()
+    main.prune_logs()
+    assert not old.exists()

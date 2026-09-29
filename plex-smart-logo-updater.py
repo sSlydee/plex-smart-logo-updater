@@ -1207,10 +1207,11 @@ def run_lock():
         yield
 
 
-def prune_logs():
+def prune_logs(keep=()):
     """
     Deletes the oldest dry-run log folders beyond LOGS_KEEP. Folders holding an
-    undo journal (apply runs) are always kept. cron.log is trimmed to its most
+    undo journal (apply runs) are always kept, and so are the folders in keep.
+    cron.log is trimmed to its most
     recent part when it grows beyond CRON_LOG_MAX_BYTES.
     """
     import shutil
@@ -1221,7 +1222,8 @@ def prune_logs():
     dry_runs = [n for n in names
                 if os.path.isdir(os.path.join(LOGS_DIR, n))
                 and re.search(r"_(simulation|undo-simulation)(_\d+)?$", n)
-                and not any(os.path.exists(os.path.join(LOGS_DIR, n, f)) for f in ("undo.json", "annulation.json"))]
+                and not any(os.path.exists(os.path.join(LOGS_DIR, n, f)) for f in ("undo.json", "annulation.json"))
+                and os.path.abspath(os.path.join(LOGS_DIR, n)) not in keep]
     for name in dry_runs[:max(0, len(dry_runs) - LOGS_KEEP)]:
         shutil.rmtree(os.path.join(LOGS_DIR, name), ignore_errors=True)
 
@@ -1271,7 +1273,9 @@ def run(opts):
     cats = categories_for(opts)
 
     run_dir = new_run_dir(mode)
-    prune_logs()
+    choices = load_choices(opts.choices) if opts.choices else None
+    # The dry run being applied keeps its folder (choices.json, review page) even if it is old
+    prune_logs(keep={os.path.dirname(os.path.abspath(opts.choices))} if opts.choices else ())
     # run.json: lets review_server.py tell a complete full run from a targeted or interrupted one
     targeted = bool(opts.rating_keys or opts.choices)
     runstate.write_run_info(run_dir, targeted, TARGET_LIBRARIES, complete=False)
@@ -1280,7 +1284,7 @@ def run(opts):
     ctx = Context()
     ctx.ignored = ignorelist.IgnoreList(IGNORE_PATH)
     if opts.choices:
-        ctx.choices = load_choices(opts.choices)
+        ctx.choices = choices
     if opts.apply:
         ctx.journal = UndoJournal(os.path.join(run_dir, "undo.json"))
     if opts.html:
