@@ -37,7 +37,7 @@ Based on [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-log
 
 ## Quick start
 
-For those used to the command line. Linux (or macOS, or WSL on Windows), Python 3.8+ and git:
+For those used to the command line. Linux (or macOS, or WSL on Windows), Python 3.8 to 3.12 and git:
 
 ```bash
 git clone https://github.com/sSlydee/plex-smart-logo-updater.git
@@ -55,7 +55,7 @@ New to GitHub or to the command line? This guide takes you from nothing to your 
 ### What you need
 
 - **A machine that can reach your Plex server**: the Plex server itself, a seedbox, a NAS, a VPS… The script is tested on Linux. macOS should work, and on Windows use [WSL](https://learn.microsoft.com/windows/wsl/install).
-- **Python 3.8 or later** and **git**.
+- **Python 3.8 to 3.12** and **git**. The OCR engine does not install on Python 3.13 or later yet.
 - **Your Plex token** ([how to find it](https://support.plex.tv/articles/204059436-finding-an-authentication-token-x-plex-token/)).
 - About **500 MB of disk space** for the Python environment. The OCR engine is the largest part.
 
@@ -74,7 +74,7 @@ python3 --version
 git --version
 ```
 
-Each command should print a version number, and Python must be 3.8 or later. If one is missing, install it with your system's package manager (on Debian/Ubuntu: `sudo apt install python3 python3-venv git`) or ask your provider.
+Each command should print a version number, and Python must be between 3.8 and 3.12. If `python3` is newer, check whether an older version is installed too (`python3.12 --version`, `python3.11 --version`…): you will pass it to the installer. If one is missing, install it with your system's package manager (on Debian/Ubuntu: `sudo apt install python3 python3-venv git`) or ask your provider.
 
 ### 2. Download the project
 
@@ -161,7 +161,7 @@ Every change goes through three steps: a **dry run** that writes a review page, 
 .venv/bin/python plex-smart-logo-updater.py --html
 ```
 
-Each run creates a folder in `logs/`, named after the date and mode (`2026-09-23_18h20m05_simulation` for a dry run). With `--html`, the review page `review.html` is written there.
+Each run creates a folder in `logs/`, named after the date and mode (`2026-09-23_18h20m05_simulation` for a dry run). With `--html`, the review page `review.html` is written there when there is something to review.
 
 ### 2. Review
 
@@ -184,7 +184,7 @@ scp choices.json your_user@your_server_address:plex-smart-logo-updater/logs/<fol
 
 ### 3. Apply
 
-Put `choices.json` in the dry run's folder, then:
+Put `choices.json` in the dry run's folder (the script reads the dry run's options there, and marks the dry run as applied), then run the command printed at the end of the dry run's summary:
 
 ```bash
 .venv/bin/python plex-smart-logo-updater.py --apply --choices logs/<dry run folder>/choices.json
@@ -219,6 +219,7 @@ location /logos/ {
 - The server only listens on `127.0.0.1`: it is reached through your reverse proxy, in HTTPS. A sign-in page protects every page; the session lasts 30 days, and changing the password signs everyone out. After 10 failed attempts from the same visitor within 15 minutes, sign-in is refused to that visitor for a while; the visitor is known by the address your proxy adds to `X-Forwarded-For`, so keep that header in the proxy block. After 50 failed attempts within 15 minutes from all visitors together, sign-in is refused to everyone for a while (open sessions keep working). If your proxy adds its own login, turn it off for this address (`auth_basic off;` with nginx).
 - The home page lists the latest dry runs. A dry run can only be applied once (an application that failed, for example while Plex was down, can be applied again), and not once a newer dry run replaces it (a full one covering the same libraries, or one proposing all the same changes): apply that one instead.
 - The notifications link to the page on the server (`REVIEW_URL`) instead of the file path.
+- The service is a systemd user service (Linux). On some servers, user services stop when you log out: if so, `loginctl enable-linger` (or your provider) keeps them running.
 - To change the login, password, port or address, run `configure.py --review-server` again: it restarts the service. To check the service: `systemctl --user status plex-smart-logo-review.service`.
 
 ### Ignore list
@@ -298,13 +299,13 @@ A few more details:
 - A season imported episode by episode does not flood you: each pending change is notified once. The automatic run still sends a reminder while a change waits for your review.
 - Runs started at the same time wait for each other.
 - If Plex has not fetched a title's images yet when it is checked, the next automatic run catches it.
-- If Plex cannot be reached, the queued titles are tried again 5 minutes later, up to 6 times; the automatic run catches the rest.
+- If Plex cannot be reached, the queued titles are tried again at least 5 minutes later, up to 6 times: at the next queue processing (every 5 minutes with `configure.py --tautulli`, otherwise at the hook's next call). The automatic run catches the rest.
 
 To process titles by hand: `--rating-key 12345`, or `--process-queue` for the queue.
 
 ### Monitoring with Uptime Kuma
 
-With `HEALTHCHECK_URL`, every run pings a monitoring service. It reports **up** when the run went fine, and **down** with the reason when it failed (token rejected, server unreachable, crash). If the automatic run stops altogether (broken cron, machine turned off…), the missing ping warns you.
+With `HEALTHCHECK_URL`, every scan (automatic, by hand or from the Tautulli queue) pings a monitoring service. It reports **up** when the run went fine, and **down** with the reason when it failed (token rejected, server unreachable, crash). If the automatic run stops altogether (broken cron, machine turned off…), the missing ping warns you.
 
 In [Uptime Kuma](https://github.com/louislam/uptime-kuma), go to **Add New Monitor > Push**. Copy the push URL into `HEALTHCHECK_URL`, or give it to `configure.py --notifications`. Then set the **heartbeat interval** a bit above your cron frequency, for example 8 days (691200 s) for a weekly run. A [healthchecks.io](https://healthchecks.io/) URL works too.
 
@@ -360,7 +361,7 @@ A variable set when launching the script takes precedence over `config.env`. For
 PLEX_LIBRARIES="Movies" .venv/bin/python plex-smart-logo-updater.py
 ```
 
-To use another settings file, set `PLEX_CONFIG` to its path (it is read by the script, the wizard and the review server).
+To use another settings file, set `PLEX_CONFIG` to its path (it is read by the script, the wizard and the review server). The cron lines, the Tautulli hook and the review server's service do not pass it on: they always use `config.env` next to the script.
 
 ### Options
 
@@ -391,7 +392,7 @@ When applying, the script waits 2 s after each change and 10 s every 10 changes,
 
 ### Choosing a logo
 
-For each title **without a logo**, the script asks Plex's metadata service (`metadata.provider.plex.tv`, with your token) which logo it recommends: first in the library's language, then in English. It looks for that logo among the ones your server offers (same address, or identical image) and selects it. It only downloads the logo from the Internet when your server does not have it.
+For each title **without a logo**, the script asks Plex's metadata service (`metadata.provider.plex.tv`, with your token) which logo it recommends: first in the library's language, then in English. It looks for that logo among the ones your server offers (same address, or identical image) and selects it. Only when your server does not have it is the logo uploaded to Plex from its Internet address.
 
 A title that already has a logo keeps it, unless that logo is a Quebec one. A locked field *without* a logo gets a proposal like any other title without a logo. To keep it empty, reject the proposal: the title then goes to the ignore list.
 
@@ -463,6 +464,7 @@ A title without a logo, set from the English recommendation:
   Current logo     : none
   Plex search      : French: none | English: found
   Recommended logo : English, 618x239 px
+  Image link       : https://…
   Found on Plex    : candidate #3 of 7 (tmdb), same URL
   ==> [TO ADD] English logo 618x239 px
 ```
@@ -488,6 +490,7 @@ The OCR does not always read perfectly ("TRAIT" instead of "TRAIN"), but the com
 |---|---|
 | `Permission denied` when running `./install.sh` | Run `bash install.sh` instead. |
 | `Python 3.8 or later is required` | Install a newer Python, or run `PYTHON=python3.11 ./install.sh` if several versions are installed. |
+| The installer stops on `rapidocr-onnxruntime` (pip error) | Your Python is 3.13 or later: delete the `.venv` folder and run `PYTHON=python3.12 ./install.sh` (or 3.8 to 3.11). |
 | `No module named ...` | Run the script with `.venv/bin/python`, not `python3`. |
 | The installer stops with `The dependencies do not load correctly` | Delete the `.venv` folder and run `./install.sh` again. If it persists, open an issue with the full output. |
 | `Plex token rejected` | Your token changed: `.venv/bin/python configure.py --token`. |
@@ -500,7 +503,7 @@ The OCR does not always read perfectly ("TRAIT" instead of "TRAIN"), but the com
 ## Good to know
 
 - An image selected by the script becomes **locked**, like a manual choice: Plex will not replace it on refresh, and later runs leave it alone.
-- Nothing is deleted: the previous logo or poster stays available in Plex (*Edit > Logo* or *Poster*).
+- Nothing is deleted: the previous logo or poster stays available in Plex (*Edit > Logo* or *Poster*). The only exception is undoing the addition of a logo to a title that had none.
 - Only the main movie or show images are handled, not those of seasons or episodes.
 - The installer replaces OpenCV 5, pulled in by the OCR engine, with an older build, because OpenCV 5 crashes on import on some machines.
 - `config.env`, `ignored.json`, `logs/`, `.venv/` and `.cache-ocr.json` must not be published (they are in `.gitignore`): they contain your token or the list of your titles.
