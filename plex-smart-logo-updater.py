@@ -64,7 +64,7 @@ import notify as notifier
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-__version__ = "1.7.0"
+__version__ = "1.7.1"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -1315,7 +1315,7 @@ def requeue(keys, path=None):
         pass
     if kept:
         not_before = int(time.time() + RETRY_DELAY)
-        with open(path, "a", encoding="utf-8") as f:
+        with queue_lock(path), open(path, "a", encoding="utf-8") as f:
             f.write("".join(f"{k}@{not_before}\n" for k in kept))
     return kept
 
@@ -1828,35 +1828,52 @@ def undo(opts):
     return ERRORS if errors else OK
 
 
+@contextlib.contextmanager
+def queue_lock(path):
+    """
+    Held while the Tautulli queue is taken or appended to (tautulli-hook.sh takes it too,
+    with flock): a key the hook writes while the queue is being taken is never lost.
+    """
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path + ".lock", "a") as lock:
+        try:
+            import fcntl
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        except ImportError:  # not available on Windows
+            pass
+        yield
+
+
 def take_queue(path=None):
     """
     Returns the ratingKeys queued by tautulli-hook.sh and empties the queue.
-    The file is renamed first, so keys added meanwhile go to a new queue file.
+    The file is renamed under the queue lock, so keys added meanwhile go to a new queue file.
     """
     path = path or QUEUE_PATH
     taking = path + ".processing"
-    try:
-        os.replace(path, taking)
-    except FileNotFoundError:
-        return []
     keys, later = [], []
     now = time.time()
-    try:
-        with open(taking, encoding="utf-8") as f:
-            for token in (t for line in f for t in re.split(r"[\s,]+", line)):
-                # "<key>" from the hook, or "<key>@<epoch>" for a retry not to run before then
-                key, _, not_before = token.partition("@")
-                if not key.isdigit():
-                    continue
-                if not_before.isdigit() and int(not_before) > now:
-                    later.append(token)
-                else:
-                    keys.append(key)
-    finally:
-        os.remove(taking)
-    if later:
-        with open(path, "a", encoding="utf-8") as f:
-            f.write("".join(f"{t}\n" for t in later))
+    with queue_lock(path):
+        try:
+            os.replace(path, taking)
+        except FileNotFoundError:
+            return []
+        try:
+            with open(taking, encoding="utf-8") as f:
+                for token in (t for line in f for t in re.split(r"[\s,]+", line)):
+                    # "<key>" from the hook, or "<key>@<epoch>" for a retry not to run before then
+                    key, _, not_before = token.partition("@")
+                    if not key.isdigit():
+                        continue
+                    if not_before.isdigit() and int(not_before) > now:
+                        later.append(token)
+                    else:
+                        keys.append(key)
+        finally:
+            os.remove(taking)
+        if later:
+            with open(path, "a", encoding="utf-8") as f:
+                f.write("".join(f"{t}\n" for t in later))
     return list(dict.fromkeys(keys))  # without duplicates, in order
 
 

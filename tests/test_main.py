@@ -351,6 +351,23 @@ def test_take_queue_returns_unique_keys_and_empties_the_queue(main, tmp_path):
     assert main.take_queue(str(queue)) == []   # empty queue: nothing to do
 
 
+def test_hook_waits_for_the_queue_being_taken(main, tmp_path):
+    """Regression: a key the hook wrote while the queue was being taken went into the deleted file."""
+    import shutil, subprocess
+    if not shutil.which("flock"):
+        pytest.skip("flock not installed")
+    hook = os.path.join(os.path.dirname(main.__file__), "tautulli-hook.sh")
+    shutil.copy(hook, tmp_path / "tautulli-hook.sh")
+    queue = str(tmp_path / "logs" / "tautulli-queue.txt")
+    with main.queue_lock(queue):
+        proc = subprocess.Popen(["bash", str(tmp_path / "tautulli-hook.sh"), "42"], stdout=subprocess.DEVNULL)
+        main.time.sleep(0.5)
+        assert proc.poll() is None                  # the hook waits for the lock
+        assert not os.path.exists(queue)
+    assert proc.wait(timeout=10) == 0
+    assert main.take_queue(queue) == ["42"]
+
+
 def test_cron_lines_are_told_apart(configure):
     run_line = "0 6 * * 1 cd x && python plex-smart-logo-updater.py --html " + configure.CRON_TAG
     old_run_line = "0 6 * * 1 cd x && python run.py # plex-smart-logo-updater (géré par configure.py)"

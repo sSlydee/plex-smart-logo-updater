@@ -21,6 +21,7 @@ Signing in (login page) opens a session for 30 days (cookie). Changing the
 password signs every session out. HTTP Basic auth also works, for scripts.
 """
 import base64
+import collections
 import hashlib
 import hmac
 import html
@@ -95,7 +96,11 @@ def server_secret():
 SESSION_KEY = hmac.new(server_secret(), f"{USER}\0{PASSWORD}".encode(), hashlib.sha256).digest()
 MAX_FAILURES = 10           # failed sign-ins per address...
 FAILURE_WINDOW = 15 * 60    # ...within this window, then sign-in is refused for a while
+# All addresses together: guesses spread over many addresses (botnet, rotating proxies) are
+# capped too. Past it, sign-in is refused to everyone for a while; open sessions keep working.
+GLOBAL_MAX_FAILURES = 50
 _FAILURES = {}
+_ALL_FAILURES = collections.deque()
 # Sessions signed out before their expiry: {signature: expiry}, kept across restarts
 REVOKED_PATH = os.path.join(LOGS_DIR, ".review-revoked.json")
 try:
@@ -159,6 +164,10 @@ _FAILURES_LOCK = threading.Lock()
 def too_many_failures(address):
     with _FAILURES_LOCK:
         now = time.time()
+        while _ALL_FAILURES and now - _ALL_FAILURES[0] >= FAILURE_WINDOW:
+            _ALL_FAILURES.popleft()
+        if len(_ALL_FAILURES) >= GLOBAL_MAX_FAILURES:
+            return True
         recent = [t for t in _FAILURES.get(address, []) if now - t < FAILURE_WINDOW]
         if recent:
             _FAILURES[address] = recent
@@ -179,6 +188,7 @@ def record_failure(address):
             if len(_FAILURES) >= MAX_TRACKED:
                 _FAILURES.pop(next(iter(_FAILURES)))
         _FAILURES.setdefault(address, []).append(time.time())
+        _ALL_FAILURES.append(time.time())
 
 
 def relative_root(path):

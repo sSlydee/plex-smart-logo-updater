@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [1.7.1] - 2026-09-29
+
+### Security
+- Review server: besides the per-address limit, sign-in is refused to everyone for a while after 50 failed attempts within 15 minutes, all addresses together (guesses spread over many addresses). Open sessions keep working.
+
+### Fixed
+- Tautulli queue: `tautulli-hook.sh` and the script share a lock (`logs/tautulli-queue.txt.lock`, `flock`), so a title added while the queue was being taken is no longer lost.
+
 ## [1.7.0] - 2026-09-29
 
 ### Security
@@ -151,6 +159,8 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.7.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.7.1
+[1.7.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.7.0
 [1.6.4]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.4
 [1.6.3]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.3
 [1.6.2]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.6.2

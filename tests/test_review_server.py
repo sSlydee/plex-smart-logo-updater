@@ -264,6 +264,19 @@ def test_forged_forwarded_for_does_not_bypass_the_limit(server, monkeypatch):
     assert raw(base + "/login", data=right, headers={"X-Forwarded-For": "1.2.3.4, 203.0.113.9"})[0] == 429
 
 
+def test_guesses_from_many_addresses_hit_the_global_cap(server, monkeypatch):
+    rs, base, _ = server
+    monkeypatch.setattr(rs.time, "sleep", lambda s: None)
+    form = urllib.parse.urlencode({"user": "plex", "password": "wrong"}).encode()
+    for i in range(rs.GLOBAL_MAX_FAILURES):
+        assert raw(base + "/login", data=form, headers={"X-Forwarded-For": f"10.0.1.{i}"})[0] == 401
+    right = urllib.parse.urlencode({"user": "plex", "password": "secret"}).encode()
+    assert raw(base + "/login", data=right, headers={"X-Forwarded-For": "10.0.2.1"})[0] == 429
+    later = rs.time.time() + rs.FAILURE_WINDOW + 1
+    monkeypatch.setattr(rs.time, "time", lambda: later)
+    assert raw(base + "/login", data=right, headers={"X-Forwarded-For": "10.0.2.1"})[0] == 303
+
+
 def test_basic_auth_guesses_count_as_failures(server):
     rs, base, _ = server
     for _ in range(rs.MAX_FAILURES):

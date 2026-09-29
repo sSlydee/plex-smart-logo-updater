@@ -19,7 +19,13 @@ done
 [ ${#keys[@]} -eq 0 ] && { echo "tautulli-hook.sh: no ratingKey given" >&2; exit 0; }
 
 mkdir -p logs
-printf '%s\n' "${keys[@]}" >> logs/tautulli-queue.txt
+# Same lock as the script taking the queue: a key written while it is taken is not lost.
+# Without flock (some minimal containers), the key is appended unlocked, as before.
+if command -v flock >/dev/null 2>&1; then
+    { flock 9; printf '%s\n' "${keys[@]}" >> logs/tautulli-queue.txt; } 9>> logs/tautulli-queue.txt.lock
+else
+    printf '%s\n' "${keys[@]}" >> logs/tautulli-queue.txt
+fi
 echo "plex-smart-logo-updater: queued ${keys[*]}"
 
 if .venv/bin/python -c "import plexapi" >/dev/null 2>&1; then
