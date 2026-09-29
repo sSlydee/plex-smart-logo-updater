@@ -40,6 +40,7 @@ See --help for the options.
 """
 import argparse
 import atexit
+import sys
 import collections
 import contextlib
 import io
@@ -203,6 +204,18 @@ TOKEN_FIX = "change it with: .venv/bin/python configure.py --token"
 
 class TokenError(Exception):
     """The Plex token is rejected (401): no point in going on."""
+
+
+def redact(text):
+    """
+    An error text without the Plex token: requests errors quote the full URL, and image
+    URLs carry "X-Plex-Token=…". Used for everything written to logs, notifications or
+    the monitoring.
+    """
+    text = re.sub(r"(X-Plex-Token=)[^&\s'\"]+", r"\1<hidden>", str(text), flags=re.I)
+    if PLEX_TOKEN and len(PLEX_TOKEN) >= 8:
+        text = text.replace(PLEX_TOKEN, "<hidden>")
+    return text
 
 
 def is_unauthorized(error):
@@ -1124,8 +1137,8 @@ def process_library(plex, section, log, opts, ctx, languages, items=None):
             except Exception as e:
                 if is_unauthorized(e):
                     raise TokenError(str(e)) from e
-                status("error", f"{what}: {e}" if asset is POSTER else str(e))
-                results["error"].append(f"{label}{' [poster]' if asset is POSTER else ''}: {e}")
+                status("error", redact(f"{what}: {e}" if asset is POSTER else e))
+                results["error"].append(redact(f"{label}{' [poster]' if asset is POSTER else ''}: {e}"))
                 titles = None
 
     return results
@@ -1427,7 +1440,7 @@ def select_titles(plex, rating_keys, summary):
             elif item.type == "season":
                 item = plex.fetchItem(int(item.parentRatingKey))
         except Exception as e:
-            summary(f"  [!] ratingKey {key}: {e}")
+            summary(redact(f"  [!] ratingKey {key}: {e}"))
             continue
         if item.type not in ("movie", "show"):
             summary(f"  [!] ratingKey {key}: {item.type} titles have no logo, skipped")
@@ -1457,7 +1470,7 @@ def stop(opts, summary, error):
     if is_unauthorized(error):
         message = f"Plex token rejected: {TOKEN_FIX}"
     else:
-        message = f"Cannot connect to the Plex server ({PLEX_URL}): {error}"
+        message = redact(f"Cannot connect to the Plex server ({PLEX_URL}): {error}")
     summary("")
     summary(f"  [!] {message}")
     summary(LINE)
@@ -1626,7 +1639,7 @@ def undo(opts):
     try:
         plex = PlexServer(PLEX_URL, PLEX_TOKEN, session=HTTP)
     except Exception as ex:
-        log(f"  [!] {'Plex token rejected: ' + TOKEN_FIX if is_unauthorized(ex) else ex}")
+        log(f"  [!] {'Plex token rejected: ' + TOKEN_FIX if is_unauthorized(ex) else redact(ex)}")
         log.close()
         return
     done, skipped, errors = [], [], []
@@ -1665,8 +1678,8 @@ def undo(opts):
             if opts.apply:
                 time.sleep(DELAY_AFTER_CHANGE)
         except Exception as ex:
-            log(f"  ==> [ERROR] {ex}")
-            errors.append(f"{e['title']}: {ex}")
+            log(redact(f"  ==> [ERROR] {ex}"))
+            errors.append(redact(f"{e['title']}: {ex}"))
 
     log("")
     log(LINE)
@@ -1795,6 +1808,9 @@ if __name__ == "__main__":
             if queued:
                 requeue(queued)
             # Unexpected crash: tell the monitoring before showing the traceback
-            ping_healthcheck(False, f"crash: {type(crash).__name__}: {crash}")
-            raise
+            ping_healthcheck(False, redact(f"crash: {type(crash).__name__}: {crash}"))
+            # The traceback goes to cron.log / tautulli.log: without the token
+            import traceback
+            sys.stderr.write(redact(traceback.format_exc()))
+            raise SystemExit(STOPPED)
         raise SystemExit(outcome)

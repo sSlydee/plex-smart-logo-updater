@@ -393,3 +393,37 @@ def test_a_lasting_failure_is_notified_once(main, tmp_path):
     assert main.failure_is_new(message, state) is False
     main.clear_failure(state)  # a run went fine
     assert main.failure_is_new(message, state) is True
+
+
+def test_errors_never_show_the_plex_token(main, monkeypatch):
+    """Regression: a failed image download quoted its URL, with X-Plex-Token, in the logs and the monitoring."""
+    monkeypatch.setattr(main, "PLEX_TOKEN", "SecretTok3n")
+    error = ("404 Client Error: Not Found for url: http://127.0.0.1:32400/library/metadata/1/file"
+             "?url=x&X-Plex-Token=SecretTok3n&size=2")
+    shown = main.redact(error)
+    assert "SecretTok3n" not in shown and "X-Plex-Token=<hidden>&size=2" in shown
+    assert main.redact("token SecretTok3n in a message") == "token <hidden> in a message"
+
+
+def test_library_errors_are_logged_without_the_token(main, monkeypatch, tmp_path):
+    import argparse
+    import ignorelist
+
+    class Item:
+        ratingKey, title, year = 5, "Real Steel", 2011
+
+        def logos(self):
+            return []
+
+    def failing_plan(*args):
+        raise RuntimeError("404 Client Error for url: http://h/file?X-Plex-Token=SecretTok3n")
+
+    monkeypatch.setattr(main, "PLEX_TOKEN", "SecretTok3n")
+    monkeypatch.setattr(main, "plan_item", failing_plan)
+    ctx = main.Context()
+    ctx.ignored = ignorelist.IgnoreList(str(tmp_path / "ignored.json"))
+    lines = []
+    opts = argparse.Namespace(apply=False, choices=None, replace=False, include_locked=False,
+                              fix_locked_quebec=False, posters=False)
+    results = main.process_library(None, FakeSection([Item()]), lines.append, opts, ctx, ["fr-FR", "en-US"])
+    assert results["error"] and not any("SecretTok3n" in t for t in results["error"] + lines)
