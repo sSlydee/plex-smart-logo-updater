@@ -635,3 +635,9 @@ def test_retry_count_restarts_once_a_title_was_processed(main, tmp_path):
         main.take_queue(queue)
     main.forget_retries(["123"], queue)  # processed fine later on
     assert main.requeue(["123"], queue) == ["123"]
+
+
+def test_unignore_of_an_unknown_title_fails(main, monkeypatch, tmp_path):
+    import argparse
+    monkeypatch.setattr(main, "IGNORE_PATH", str(tmp_path / "ignored.json"))
+    assert main.manage_ignore(argparse.Namespace(ignore=None, unignore=["Nope"], list_ignored=False)) is False

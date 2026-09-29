@@ -1844,6 +1844,7 @@ def find_titles(plex, spec):
 
 
 def manage_ignore(opts):
+    """Returns True when every --ignore / --unignore title was found (the exit code tells scripts)."""
     if opts.ignore or opts.unignore:
         # A run may be adding rejected titles to the same file: wait for it, then read the list
         with run_lock():
@@ -1854,13 +1855,16 @@ def manage_ignore(opts):
 def _manage_ignore(opts):
     ignored = ignorelist.IgnoreList(IGNORE_PATH)
     changed = False
+    all_found = True
     if opts.ignore:
         plex = PlexServer(PLEX_URL, PLEX_TOKEN, session=HTTP)
         for spec in opts.ignore:
             matches = find_titles(plex, spec)
             if not matches:
+                all_found = False
                 print(f'[!] "{spec}": no title found. Use "Library/Title", "Title (year)" or a ratingKey.')
             elif len(matches) > 1:
+                all_found = False
                 print(f'[!] "{spec}" matches several titles, be more specific:')
                 for item in matches:
                     year = f" ({item.year})" if getattr(item, "year", None) else ""
@@ -1876,8 +1880,10 @@ def _manage_ignore(opts):
     for spec in opts.unignore or []:
         keys = ignored.find(spec)
         if not keys:
+            all_found = False
             print(f'[!] "{spec}" is not on the ignore list (see --list-ignored).')
         elif len(keys) > 1:
+            all_found = False
             print(f'[!] "{spec}" matches several ignored titles, use "Library/Title" or the ratingKey:')
             for key in keys:
                 print(f"      {ignored.label(key)}   (ratingKey {key})")
@@ -1892,6 +1898,7 @@ def _manage_ignore(opts):
         print(f"\nIgnore list ({len(ignored)} title(s), {IGNORE_PATH}):")
         for key, v in sorted(ignored.titles.items(), key=lambda kv: ignored.label(kv[0]).casefold()):
             print(f"  - {ignored.label(key)}   [{v['reason']}, {v['added']}, ratingKey {key}]")
+    return all_found
 
 
 if __name__ == "__main__":
@@ -1899,7 +1906,7 @@ if __name__ == "__main__":
     if options.include_locked and not options.replace:
         raise SystemExit("[!] --include-locked requires --replace.")
     if options.ignore or options.unignore or options.list_ignored:
-        manage_ignore(options)
+        raise SystemExit(0 if manage_ignore(options) else 1)
     elif options.undo:
         with run_lock():
             raise SystemExit(undo(options))
@@ -1912,7 +1919,10 @@ if __name__ == "__main__":
                     if not queued:
                         raise SystemExit(0)  # nothing queued: no run, no log, no ping
                     options.rating_keys = (options.rating_keys or []) + queued
-                outcome = run(options)
+                try:
+                    outcome = run(options)
+                finally:
+                    OCR.save()  # while still holding the lock (a stopped run would save at exit, unlocked)
                 if outcome == STOPPED and queued:
                     requeue(queued)  # Plex unreachable: try these titles again next time
                 elif queued:
