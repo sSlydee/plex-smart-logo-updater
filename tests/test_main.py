@@ -495,3 +495,20 @@ def test_ignore_list_changes_wait_for_running_runs(main, monkeypatch, tmp_path):
     monkeypatch.setattr(main, "run_lock", lock)
     main.manage_ignore(argparse.Namespace(ignore=None, unignore=["7"], list_ignored=False))
     assert events == ["locked"] and "7" not in ignorelist.IgnoreList(str(path))
+
+
+def test_ocr_cache_save_keeps_other_runs_readings(main, tmp_path):
+    """Regression: a run that waited behind another saved its stale copy of the cache, erasing that run's readings."""
+    path = str(tmp_path / "ocr.json")
+    waiting = main.OcrCache(path)          # loaded at start-up, then waits for the lock
+    other = main.OcrCache(path)
+    other.data["logo-A"] = {"text": "A"}
+    other.changed.add("logo-A")
+    other.dirty = True
+    other.save()                           # the other run finishes first
+    waiting.data["logo-B"] = {"text": "B"}
+    waiting.changed.add("logo-B")
+    waiting.dirty = True
+    waiting.save()
+    saved = json.loads(open(path).read())
+    assert set(saved) == {"logo-A", "logo-B"}

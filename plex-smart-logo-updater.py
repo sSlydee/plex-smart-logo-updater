@@ -378,6 +378,7 @@ class OcrCache:
     def __init__(self, path):
         self.path = path
         self.dirty = False
+        self.changed = set()  # keys read or updated by this process, merged into the file on save
         try:
             with open(path, encoding="utf-8") as f:
                 self.data = json.load(f)
@@ -400,6 +401,7 @@ class OcrCache:
         if not poster:
             self.data[key]["color"] = colorfulness(img)
         self.dirty = True
+        self.changed.add(key)
         return text, img.size
 
     def color(self, plex, logo_or_url):
@@ -412,16 +414,29 @@ class OcrCache:
         if entry is not None:
             entry["color"] = value
             self.dirty = True
+            self.changed.add(key)
         return value
 
     def save(self):
+        """
+        Writes this process's readings into the file. The cache was loaded at start-up,
+        possibly before waiting for another run: what that run added meanwhile is kept.
+        """
         if not self.dirty:
             return
-        tmp = self.path + ".tmp"
+        try:
+            with open(self.path, encoding="utf-8") as f:
+                on_disk = json.load(f)
+        except (OSError, ValueError):
+            on_disk = {}
+        on_disk.update({key: self.data[key] for key in self.changed if key in self.data})
+        self.data = on_disk
+        tmp = f"{self.path}.{os.getpid()}.tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(self.data, f, ensure_ascii=False)
         os.replace(tmp, self.path)
         self.dirty = False
+        self.changed = set()
 
 
 def colorfulness(img):
