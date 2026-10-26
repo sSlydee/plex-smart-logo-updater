@@ -233,3 +233,70 @@ def test_an_ocr_reading_keeps_the_measures_already_cached(main, monkeypatch, tmp
     cache.dark(None, "https://x/logo.png")
     cache.read(None, "https://x/logo.png")
     assert "dark" in cache.data["https://x/logo.png"] and cache.data["https://x/logo.png"]["text"] == "SAW"
+
+
+def test_an_error_while_looking_for_a_colored_logo_never_logs_the_token(main, fake, monkeypatch):
+    """Regression: a failed image download was logged as is, with its X-Plex-Token=… URL."""
+    def fail(*a, **k):
+        raise RuntimeError("404 Client Error for url: http://plex:32400/library/metadata/7/file?X-Plex-Token=SECRET123")
+    monkeypatch.setattr(main, "colored_alternative", fail)
+    lines = []
+    logos = [FakeLogo("white#1", selected=True)]
+    plan = main.plan_item(None, FakeItem(logos), logos, lines.append, opts(), ["fr-FR"])
+    assert plan.category == "kept"
+    logged = "\n".join(lines)
+    assert "not checked" in logged and "SECRET123" not in logged and "<hidden>" in logged
+
+
+def test_an_empty_setting_means_the_default(main, monkeypatch):
+    """Regression: configure.py writes PLEX_PREFER_COLOR= for an older config, which turned the option off."""
+    for value, default, expected in (("", True, True), ("  ", True, True), ("no", True, False),
+                                     ("yes", False, True), ("", False, False)):
+        monkeypatch.setenv("PLEX_TEST_FLAG", value)
+        assert main.env_flag("PLEX_TEST_FLAG", default) is expected
+    monkeypatch.delenv("PLEX_TEST_FLAG")
+    assert main.env_flag("PLEX_TEST_FLAG", True) is True
+
+
+def test_a_colored_logo_read_with_uncertainty_is_flagged(main, fake, monkeypatch):
+    """Regression: on a title with a different Quebec title, a colored logo whose French reading is
+    uncertain only carried "Colored", not the "French inferred" warning other OCR picks get."""
+    titles = ("Retour vers le futur", "Retour dans le futur", "Back to the Future")
+    monkeypatch.setattr(main.quebec, "verdict",
+                        lambda text, *t: (q.QC, 1.0) if text.startswith("RETOUR DANS") else (q.FR_GUESS, 1.0))
+    LOGOS["qc"] = ("RETOUR DANS LE FUTUR", 0.0)
+    try:
+        logos = [FakeLogo("qc#1", selected=True), FakeLogo("white#2"), FakeLogo("color#3")]
+        plan = plan_with(main, monkeypatch, logos, quebec_titles=titles)
+        assert (plan.index, plan.colored, plan.mention) == (2, True, "inferred")
+    finally:
+        del LOGOS["qc"]
+
+
+def test_the_review_page_knows_every_colored_logo(main, fake, monkeypatch):
+    """Regression: the Colored filter and badge only looked at the mention, which can be another one."""
+    import html_report
+    plan = main.Plan()
+    plan.category, plan.mention, plan.colored = "replace", "original", True
+    card = html_report.card("Films", FakeItem([]), "Saw (2004)", plan, None, None, True, "Logo to replace",
+                            "Original title")
+    assert card["colored"] is True
+    source = open(html_report.__file__, encoding="utf-8").read()
+    assert '["colored", "Colored", c => c.colored]' in source
+
+
+def test_concurrent_runs_merge_their_cache_entries(main, monkeypatch, tmp_path):
+    """Regression: a run that only measured a logo's colors overwrote the OCR reading another run saved."""
+    path = str(tmp_path / "cache.json")
+    waiting = main.OcrCache(path)  # loaded before the other run saved
+    other = main.OcrCache(path)
+    other.data["k"] = {"text": "SAW", "w": 10, "h": 5, "v": q.OCR_VERSION, "color": 0.8}
+    other.changed.add("k")
+    other.dirty = True
+    other.save()
+    waiting.data["k"] = {"dark": 0.0}
+    waiting.changed.add("k")
+    waiting.dirty = True
+    waiting.save()
+    saved = main.OcrCache(path).data["k"]
+    assert saved["text"] == "SAW" and saved["dark"] == 0.0 and saved["color"] == 0.8

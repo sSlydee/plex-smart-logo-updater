@@ -65,6 +65,7 @@ def card(library, item, label, plan, current_thumb, new_thumb, decidable, catego
         "categoryLabel": category_label,
         "mention": plan.mention,
         "mentionLabel": mention_label,
+        "colored": bool(getattr(plan, "colored", False)),
         "quebec": bool(plan.current_is_qc),
         "detail": plan.detail,
         "fr": fr, "ca": ca, "en": en,
@@ -220,7 +221,7 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
     ["quebec", "Quebec replaced", c => c.quebec && c.decidable],
     ["original", "Original title", c => c.mention === "original"],
     ["inferred", "French inferred", c => c.mention === "inferred"],
-    ["colored", "Colored", c => c.mention === "colored"],
+    ["colored", "Colored", c => c.colored],
     ["add", "Additions", c => c.category === "add"],
     ["replace", "Replacements", c => c.category === "replace"],
     ["posters", "Posters", c => c.asset === "poster"],
@@ -269,6 +270,7 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
     if (poster) badges.push(`<span class="badge">Poster</span>`);
     if (c.quebec) badges.push(`<span class="badge qc">Current ${poster ? "poster" : "logo"} is Quebec</span>`);
     if (c.mention) badges.push(`<span class="badge${c.mention === "colored" ? "" : " warn"}">${esc(c.mentionLabel)}</span>`);
+    if (c.colored && c.mention !== "colored") badges.push(`<span class="badge">Colored</span>`);
     const titles = c.fr ? `<div class="titles">France <b>${esc(c.fr)}</b> · Quebec <b>${esc(c.ca)}</b>` +
       (c.en ? ` · original <b>${esc(c.en)}</b>` : "") + `</div>` : "";
     const actions = c.decidable && !DATA.apply ?

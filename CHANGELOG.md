@@ -6,19 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and the proje
 ## [Unreleased]
 
 ### Added
-- Colored logos (`PLEX_PREFER_COLOR`, on by default, asked by the setup wizard): when the logo set or about to be set is white or grey, a colored logo showing the same title (read with OCR) is proposed instead, among the first 15 the server offers. The language comes first (a colored logo showing the original title never replaces a white one showing the title in the library's language, and the other way round); when the white logo shows only the title, logos with extra text are left out, and so are logos with many dark parts and, in French libraries, Quebec logos. The first run after the upgrade takes longer: the colors of the logos are measured once, then cached. White logos already set are proposed for replacement too, unless locked. Review page: **Colored** badge and filter.
+- Colored logos (`PLEX_PREFER_COLOR`, on by default, asked by the setup wizard): when the logo set or about to be set is white or grey, a colored logo showing the same title (read with OCR) is proposed instead, among the first 15 the server offers. The language comes first (a colored logo showing the original title never replaces a white one showing the title in the library's language, and the other way round); when the white logo shows only the title, logos with extra text are left out, and so are logos with many dark parts and, in French libraries, Quebec logos. The first run after the upgrade takes longer: the colors of the logos are measured once, then cached. White logos already set are proposed for replacement too, unless locked. Review page: **Colored** badge and filter (also for colored logos that carry another mention). On titles whose Quebec title differs, the mention is worked out from the colored logo's own text (e.g. "French inferred"). Rejecting a colored proposal puts the title on the ignore list, like any rejected change.
 
 ### Changed
 - Logo colors are measured with numpy instead of `Image.getdata()`, which Pillow 14 removes (same values, the cache stays valid).
 - Bark: tapping a dry run's notification opens its review page (`url` field, also sent to generic webhooks), when `REVIEW_URL` is set.
-- The OCR cache also keeps the colorfulness and dark share of logos not read yet, so they are downloaded once.
+- The OCR cache also keeps the colorfulness and dark share of logos not read yet, so they are downloaded once; concurrent runs merge their cache entries instead of replacing them.
+- A yes/no setting left empty in `config.env` (as `configure.py` writes keys an older config lacks) means its default.
 
 ### Fixed
 - Discord notifications: the review page link is no longer in code formatting, so it can be clicked (wrapped in `<>`: no preview of the sign-in page).
 - Notifications: each replacement is counted and named by what it replaces: a Quebec logo, a white logo ("colored logo to set"), or another logo (`--replace`), which was also reported as a Quebec logo.
-- Notifications are tried again (twice, waiting as long as the server asks, 30 s at most) after a rate limit, a server error or a failed connection, instead of waiting for the next run (not after a read timeout: the message may have arrived).
+- Notifications are tried again (twice, waiting as long as the server asks, 30 s at most) after a rate limit or a server error, instead of waiting for the next run. Failed connections are already retried by the HTTP session; after a timeout or a dropped connection the message may have arrived, so it is not sent again.
 - Notification wording: a dry run says "to replace" (not "replaced"); an application asks to check unverified logos in Plex instead of "look at them first"; errors are named (the first three).
-- Discord: `*`, `_`, `~`, `` ` `` and `|` in titles are shown as is instead of formatting the message; a long message is cut before its last lines, so the review link is kept; mentions (`@everyone`) never ping.
+- Discord: `*`, `_`, `~`, `` ` `` and `|` in titles are shown as is instead of formatting the message; a long message is cut before its last lines, so the review link is kept (a two-line failure alert is cut, not emptied); mentions (`@everyone`) never ping.
 
 ## [1.7.2] - 2026-09-30
 

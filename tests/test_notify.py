@@ -190,13 +190,28 @@ def test_a_local_review_page_is_not_sent_as_a_link():
     assert "url" not in session.calls[0][1]
 
 
-def test_a_read_timeout_is_not_tried_again(monkeypatch):
-    """Regression: a read timeout was tried again, though the message may have arrived (sent twice)."""
+def test_timeouts_and_connection_errors_are_not_tried_again(monkeypatch):
+    """Regression: a read timeout or a dropped connection was tried again though the message may have
+    arrived (sent twice), and failed connections were retried on top of the HTTP session's own retries."""
     import requests
     monkeypatch.setattr(notify.time, "sleep", lambda s: None)
-    session = FlakySession(requests.ReadTimeout("read timed out"))
-    [(kind, error)] = notify.send(session, [("discord", "https://d/x")], "Title", "Body")
-    assert error and session.calls == 1
-    session = FlakySession(requests.ConnectTimeout("connect timed out"))
-    assert notify.send(session, [("discord", "https://d/x")], "Title", "Body") == [("discord", None)]
-    assert session.calls == 2
+    for error in (requests.ReadTimeout("read timed out"), requests.ConnectTimeout("connect timed out"),
+                  requests.ConnectionError("connection reset")):
+        session = FlakySession(error)
+        [(kind, message)] = notify.send(session, [("discord", "https://d/x")], "Title", "Body")
+        assert message and session.calls == 1
+
+
+def test_an_absurd_retry_after_does_not_crash(monkeypatch):
+    waits = []
+    monkeypatch.setattr(notify.time, "sleep", waits.append)
+    for value in ("nan", "inf", "soon"):
+        session = FlakySession(StatusError(429, {"Retry-After": value}))
+        assert notify.send(session, [("discord", "https://d/x")], "Title", "Body") == [("discord", None)]
+    assert waits == [5, 5, 5]
+
+
+def test_a_long_two_line_alert_is_cut_not_emptied():
+    """Regression: a failure alert (title + one long error line) became just "…" on Discord."""
+    text = notify.shorten_discord("**Plex logos: run failed**\n" + "Cannot connect: " + "x" * 3000)
+    assert text.startswith("**Plex logos: run failed**\nCannot connect: ") and len(text) <= notify.DISCORD_LIMIT

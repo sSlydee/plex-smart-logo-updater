@@ -11,6 +11,7 @@ type is guessed from the address, or forced with a prefix:
 Without a prefix: discord.com/api/webhooks addresses are Discord, api.day.app
 addresses are Bark, anything else is a generic webhook.
 """
+import math
 import re
 import time
 
@@ -18,7 +19,7 @@ import requests
 
 KINDS = ("discord", "bark", "json")
 DISCORD_LIMIT = 1900   # Discord refuses messages over 2000 characters
-RETRIES = 2            # new attempts after a temporary refusal (rate limit, server error) or a connection error
+RETRIES = 2            # new attempts after a temporary refusal (rate limit, server error)
 RETRY_STATUSES = (429, 500, 502, 503, 504)
 MAX_RETRY_WAIT = 30    # seconds, whatever the server asks
 
@@ -60,7 +61,9 @@ def shorten_discord(text, limit=DISCORD_LIMIT):
     if len(text) <= limit:
         return text
     lines = text.split("\n")
-    tail = "\n".join(lines[-2:]) if len(lines) > 2 else ""
+    if len(lines) <= 2:  # e.g. a failure alert (title + error): nothing to keep apart
+        return text[:limit - 1] + "…"
+    tail = "\n".join(lines[-2:])
     room = limit - len(tail) - 2
     if room < 100:  # the last lines alone are too long: plain cut
         return text[:limit - 1] + "…"
@@ -138,16 +141,20 @@ def send(session, targets, title, body, markdown_body=None, link=None):
 
 
 def retry_wait(error):
-    """Seconds to wait before trying again, or None when trying again is pointless (e.g. a 404)."""
-    # Not a read timeout: the message may have arrived, and would be sent twice
-    if isinstance(error, requests.ConnectionError):  # includes ConnectTimeout
-        return 5
+    """
+    Seconds to wait before trying again, or None when trying again is pointless (e.g. a 404).
+    Only a refusal (an HTTP status) is tried again: failed connections are already retried by
+    the HTTP session, and after a timeout or a dropped connection the message may have arrived.
+    """
     response = getattr(error, "response", None)
-    if response is None or response.status_code not in RETRY_STATUSES:
+    if isinstance(error, requests.ConnectionError) or response is None \
+            or response.status_code not in RETRY_STATUSES:
         return None
     try:
         wait = float(response.headers.get("Retry-After", 5))
     except (TypeError, ValueError):
+        wait = 5
+    if not math.isfinite(wait):
         wait = 5
     return min(max(wait, 1), MAX_RETRY_WAIT)
 

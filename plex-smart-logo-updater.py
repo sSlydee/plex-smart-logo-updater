@@ -79,8 +79,14 @@ PLEX_TOKEN = os.environ.get("PLEX_TOKEN", "YOUR_PLEX_TOKEN")
 TARGET_LIBRARIES = [s.strip() for s in os.environ.get("PLEX_LIBRARIES", "Movies,TV Shows").split(",")]
 LANGUAGES_SETTING = os.environ.get("PLEX_LANGUAGES", "auto").strip() or "auto"
 FALLBACK_LANGUAGE = "en-US"
-CHECK_POSTERS = os.environ.get("PLEX_POSTERS", "no").strip().lower() in ("1", "yes", "on", "true")
-PREFER_COLOR = os.environ.get("PLEX_PREFER_COLOR", "yes").strip().lower() in ("1", "yes", "on", "true")
+def env_flag(name, default):
+    """A yes/no setting; missing or empty (configure.py writes empty keys) means the default."""
+    value = os.environ.get(name, "").strip().lower()
+    return value in ("1", "yes", "on", "true") if value else default
+
+
+CHECK_POSTERS = env_flag("PLEX_POSTERS", False)
+PREFER_COLOR = env_flag("PLEX_PREFER_COLOR", True)
 # Posters read at most per title when looking for a French poster to replace a Quebec one
 POSTER_CANDIDATES = 30
 
@@ -443,7 +449,9 @@ class OcrCache:
                 on_disk = json.load(f)
         except (OSError, ValueError):
             on_disk = {}
-        on_disk.update({key: self.data[key] for key in self.changed if key in self.data})
+        # Entries are merged, not replaced: another run may have read a logo this one only measured
+        on_disk.update({key: dict(on_disk.get(key) or {}, **self.data[key])
+                        for key in self.changed if key in self.data})
         self.data = on_disk
         tmp = f"{self.path}.{os.getpid()}.tmp"
         with open(tmp, "w", encoding="utf-8") as f:
@@ -1044,15 +1052,21 @@ def prefer_colored(plex, item, plan, logos, chosen, languages, log):
     except TokenError:
         raise
     except Exception as e:
-        log(f"  Colored logo     : not checked ({e})")
+        log(f"  Colored logo     : not checked ({redact(e)})")  # image URLs carry the token
         return False
     if logo is None:
         return False
     plan.index, plan.candidate, plan.target_url = index, logo, None
     plan.colored = True
     plan.chosen = f"colored logo \"{text}\""
-    if plan.mention is None:
-        plan.mention = "colored"
+    if quebec_titles:
+        # Worked out from the colored logo's own text, like any logo picked by OCR: a French
+        # title read with uncertainty is flagged "French inferred", not just "Colored"
+        kind, _ = quebec.replacement_kind(text, *quebec_titles)
+        plan.mention = mention_for(kind, text, quebec_titles) if kind else "inferred"
+    else:
+        plan.mention = None
+    plan.mention = plan.mention or "colored"
     log(f"  Colored logo     : candidate #{index + 1} of {len(logos)} ({logo.provider}), \"{text}\", "
         f"instead of a white/grey one")
     return True
