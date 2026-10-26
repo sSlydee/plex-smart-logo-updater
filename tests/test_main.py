@@ -611,7 +611,7 @@ def test_notification_review_link_is_clickable_and_colored_logos_are_told_apart(
     opts = argparse.Namespace(apply=False, rating_keys=None, choices=None)
     main.notify(opts, str(tmp_path / "run"), totals, "page", 1.0, {"1": "a", "2": "b"})
     lines = sent["markdown"].splitlines()
-    assert "Review page: https://example.org/logos/run/run/" in lines
+    assert "Review page: <https://example.org/logos/run/run/>" in lines
     assert "• 0 addition(s), 1 Quebec logo(s) to replace, 1 white logo(s) to replace with a colored one" in lines
     assert "• Films > Saw (2004): colored logo to set" in lines
     assert "• Films > Le Pacte (2020): Quebec logo to replace" in lines

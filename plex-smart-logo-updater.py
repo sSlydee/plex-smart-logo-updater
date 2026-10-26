@@ -50,6 +50,7 @@ import json
 import os
 import re
 import time
+import numpy as np
 import requests
 import urllib3
 from requests.adapters import HTTPAdapter
@@ -451,28 +452,26 @@ class OcrCache:
         self.changed = set()
 
 
-def colorfulness(img):
-    """Mean saturation of the logo's visible pixels (0..1)."""
+def _visible_hsv(img):
+    """(saturation, value) of the logo's visible pixels, as numpy arrays (0..255).
+    numpy rather than Image.getdata(), which Pillow 14 removes."""
     img = img.convert("RGBA")
     img.thumbnail((200, 200))
-    alpha = img.getchannel("A")
-    sat = img.convert("RGB").convert("HSV").getchannel("S")
-    total = weight = 0
-    for a, s in zip(alpha.getdata(), sat.getdata()):
-        if a > 128:
-            total += s
-            weight += 1
-    return round(total / weight / 255, 3) if weight else 0.0
+    visible = np.asarray(img.getchannel("A")) > 128
+    hsv = np.asarray(img.convert("RGB").convert("HSV"))
+    return hsv[..., 1][visible], hsv[..., 2][visible]
+
+
+def colorfulness(img):
+    """Mean saturation of the logo's visible pixels (0..1)."""
+    sat, _ = _visible_hsv(img)
+    return round(int(sat.sum(dtype=np.int64)) / sat.size / 255, 3) if sat.size else 0.0
 
 
 def darkness(img):
     """Share of the logo's visible pixels that are dark (0..1)."""
-    img = img.convert("RGBA")
-    img.thumbnail((200, 200))
-    alpha = img.getchannel("A")
-    value = img.convert("RGB").convert("HSV").getchannel("V")
-    visible = [v for a, v in zip(alpha.getdata(), value.getdata()) if a > 128]
-    return round(sum(v < 70 for v in visible) / len(visible), 3) if visible else 0.0
+    _, value = _visible_hsv(img)
+    return round(int((value < 70).sum()) / value.size, 3) if value.size else 0.0
 
 
 # Two logos have the "same style" when their colorfulness differs by less than this
@@ -1900,8 +1899,10 @@ def notify(opts, run_dir, totals, page, duration, pending=None):
     lines.append(f"Logs: {os.path.basename(run_dir.rstrip('/'))} ({minutes(duration)})")
     body = "\n".join(lines)
     # Discord: the review link stays out of code formatting, or it could not be clicked
-    # Titles are escaped: "Thunderbolts*" is not formatting
-    markdown = "\n".join(f"`{l}`" if l.startswith("Logs") else l if l.startswith("Review page")
+    # Discord: titles are escaped ("Thunderbolts*" is not formatting); the review link is
+    # wrapped in <> (clickable, without a preview of the sign-in page)
+    markdown = "\n".join(f"`{l}`" if l.startswith("Logs")
+                         else f"Review page: <{review_link(run_dir)}>" if l.startswith("Review page")
                          else f"• {notifier.escape_markdown(l)}" for l in lines)
     results = notifier.send(HTTP, NOTIFY_TARGETS, title, body, markdown)
     for kind, error in results:

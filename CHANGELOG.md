@@ -9,10 +9,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and the proje
 - Colored logos (`PLEX_PREFER_COLOR`, on by default, asked by the setup wizard): when the logo set or about to be set is white or grey, a colored logo showing the same title (read with OCR) is proposed instead, among the first 15 the server offers. The language comes first (a colored logo showing the original title never replaces a white one showing the title in the library's language, and the other way round); logos with extra text, logos with many dark parts and, in French libraries, Quebec logos are left out. White logos already set are proposed for replacement too, unless locked. Review page: **Colored** badge and filter.
 
 ### Changed
+- Logo colors are measured with numpy instead of `Image.getdata()`, which Pillow 14 removes (same values, the cache stays valid).
 - The OCR cache also keeps the colorfulness and dark share of logos not read yet, so they are downloaded once.
 
 ### Fixed
-- Discord notifications: the review page link is no longer in code formatting, so it can be clicked.
+- Discord notifications: the review page link is no longer in code formatting, so it can be clicked (wrapped in `<>`: no preview of the sign-in page).
 - Notifications: white logos replaced with colored ones are counted and named apart ("colored logo to set") instead of as Quebec logos.
 - Notifications are tried again (twice, waiting as long as the server asks, 30 s at most) after a rate limit, a server error or a connection error, instead of waiting for the next run.
 - Notification wording: a dry run says "to replace" (not "replaced"); an application asks to check unverified logos in Plex instead of "look at them first"; errors are named (the first three).
