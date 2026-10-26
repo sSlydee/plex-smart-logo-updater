@@ -17,7 +17,11 @@ LOGOS = {
     "english": ("BACK TO THE FUTURE", 0.9),
     "tagline": ("RETOUR VERS LE FUTUR MICHAEL J. FOX CHRISTOPHER LLOYD", 0.7),
     "blank": ("", 0.0),
+    # A big Japanese title with a small English subtitle: the OCR engine only reads the subtitle
+    "japanese": ("RETOUR VERS LE FUTUR", 0.8),
 }
+# Share of each logo covered by the text read (1.0 when not listed)
+COVERS = {"japanese": 0.05, "drawing": 0.3}
 TITLES = ("Retour vers le futur", "Back to the Future")
 
 
@@ -60,6 +64,8 @@ def fake(main, monkeypatch):
     monkeypatch.setattr(main.OCR, "read", fake_read)
     monkeypatch.setattr(main.OCR, "color", lambda plex, image: info(image)[1])
     monkeypatch.setattr(main.OCR, "dark", lambda plex, image: 0.4 if "dark" in image.key else 0.0)
+    monkeypatch.setattr(main.OCR, "coverage", lambda plex, image: COVERS.get(
+        (image if isinstance(image, str) else image.key).split("#")[0], 1.0))
     monkeypatch.setattr(main, "PREFER_COLOR", True)
     return read
 
@@ -228,34 +234,49 @@ def test_an_ocr_reading_keeps_the_measures_already_cached(main, monkeypatch, tmp
     """Regression: reading a logo by OCR dropped its dark share, measured before."""
     from PIL import Image
     monkeypatch.setattr(main, "fetch_image", lambda plex, image: Image.new("RGBA", (10, 10), (200, 30, 30, 255)))
-    monkeypatch.setattr(main.quebec, "read_text", lambda img, poster=False: "SAW")
+    monkeypatch.setattr(main.quebec, "read_logo", lambda img: ("SAW", 0.9))
     cache = main.OcrCache(str(tmp_path / "cache.json"))
     cache.dark(None, "https://x/logo.png")
     cache.read(None, "https://x/logo.png")
     assert "dark" in cache.data["https://x/logo.png"] and cache.data["https://x/logo.png"]["text"] == "SAW"
 
 
-def test_an_error_while_looking_for_a_colored_logo_never_logs_the_token(main, fake, monkeypatch):
-    """Regression: a failed image download was logged as is, with its X-Plex-Token=… URL."""
-    def fail(*a, **k):
-        raise RuntimeError("404 Client Error for url: http://plex:32400/library/metadata/7/file?X-Plex-Token=SECRET123")
-    monkeypatch.setattr(main, "colored_alternative", fail)
-    lines = []
-    logos = [FakeLogo("white#1", selected=True)]
-    plan = main.plan_item(None, FakeItem(logos), logos, lines.append, opts(), ["fr-FR"])
-    assert plan.category == "kept"
-    logged = "\n".join(lines)
-    assert "not checked" in logged and "SECRET123" not in logged and "<hidden>" in logged
+def test_a_colored_logo_mostly_unread_is_left_out(main, fake):
+    """Regression: Code Geass got a colored logo with a big Japanese title: the OCR engine only read its
+    small English subtitle, which matched the white logo's title."""
+    logos = [FakeLogo("white#1"), FakeLogo("japanese#2"), FakeLogo("color#3")]
+    assert alternative(main, logos, logos[0])[0] == 2  # the other colored logo is still picked
+    assert alternative(main, logos[:2], logos[0]) == (None,) * 3
 
 
-def test_an_empty_setting_means_the_default(main, monkeypatch):
-    """Regression: configure.py writes PLEX_PREFER_COLOR= for an older config, which turned the option off."""
-    for value, default, expected in (("", True, True), ("  ", True, True), ("no", True, False),
-                                     ("yes", False, True), ("", False, False)):
-        monkeypatch.setenv("PLEX_TEST_FLAG", value)
-        assert main.env_flag("PLEX_TEST_FLAG", default) is expected
-    monkeypatch.delenv("PLEX_TEST_FLAG")
-    assert main.env_flag("PLEX_TEST_FLAG", True) is True
+def test_a_low_text_share_is_fine_when_the_white_logo_has_one_too(main, fake):
+    """A logo where the title is a small part of a drawing: compared with the white logo, not absolutely."""
+    LOGOS["drawing"] = ("RETOUR VERS LE FUTUR", 0.0)
+    try:
+        logos = [FakeLogo("drawing#1"), FakeLogo("japanese#2"), FakeLogo("color#3")]
+        COVERS["drawing"], COVERS["japanese"] = 0.08, 0.2  # 0.2 is not under half of 0.08: kept
+        assert alternative(main, logos[:2], logos[0])[0] == 1
+    finally:
+        del LOGOS["drawing"]
+        COVERS.update(drawing=0.3, japanese=0.05)
+
+
+def test_read_logo_measures_the_share_covered_by_the_text(monkeypatch):
+    """The text boxes the OCR engine returns, against the ink of the prepared logo."""
+    from PIL import Image
+    img = Image.new("RGBA", (300, 150), (0, 0, 0, 0))  # transparent, like logos
+    img.paste((255, 255, 255, 255), (50, 25, 250, 125))  # a 200x100 opaque block: the ink
+
+    class Engine:
+        def __call__(self, arr):
+            h, w = arr.shape[:2]  # the block scaled to 100 px high, with a 50 px border: 300x200
+            middle = w // 2  # a box over the left half of the image: half of the block
+            return [([[0, 0], [middle, 0], [middle, h], [0, h]], "BACK", 0.9)], None
+    monkeypatch.setattr(q, "_engine", lambda: Engine())
+    text, cover = q.read_logo(img)
+    assert text == "BACK" and 0.45 < cover < 0.55
+    monkeypatch.setattr(q, "_engine", lambda: (lambda arr: (None, None)))
+    assert q.read_logo(img) == ("", 0.0)
 
 
 def test_a_colored_logo_read_with_uncertainty_is_flagged(main, fake, monkeypatch):
@@ -273,16 +294,27 @@ def test_a_colored_logo_read_with_uncertainty_is_flagged(main, fake, monkeypatch
         del LOGOS["qc"]
 
 
-def test_the_review_page_knows_every_colored_logo(main, fake, monkeypatch):
-    """Regression: the Colored filter and badge only looked at the mention, which can be another one."""
-    import html_report
-    plan = main.Plan()
-    plan.category, plan.mention, plan.colored = "replace", "original", True
-    card = html_report.card("Films", FakeItem([]), "Saw (2004)", plan, None, None, True, "Logo to replace",
-                            "Original title")
-    assert card["colored"] is True
-    source = open(html_report.__file__, encoding="utf-8").read()
-    assert '["colored", "Colored", c => c.colored]' in source
+def test_an_empty_setting_means_the_default(main, monkeypatch):
+    """Regression: configure.py writes PLEX_PREFER_COLOR= for an older config, which turned the option off."""
+    for value, default, expected in (("", True, True), ("  ", True, True), ("no", True, False),
+                                     ("yes", False, True), ("", False, False)):
+        monkeypatch.setenv("PLEX_TEST_FLAG", value)
+        assert main.env_flag("PLEX_TEST_FLAG", default) is expected
+    monkeypatch.delenv("PLEX_TEST_FLAG")
+    assert main.env_flag("PLEX_TEST_FLAG", True) is True
+
+
+def test_an_error_while_looking_for_a_colored_logo_never_logs_the_token(main, fake, monkeypatch):
+    """Regression: a failed image download was logged as is, with its X-Plex-Token=… URL."""
+    def fail(*a, **k):
+        raise RuntimeError("404 Client Error for url: http://plex:32400/library/metadata/7/file?X-Plex-Token=SECRET123")
+    monkeypatch.setattr(main, "colored_alternative", fail)
+    lines = []
+    logos = [FakeLogo("white#1", selected=True)]
+    plan = main.plan_item(None, FakeItem(logos), logos, lines.append, opts(), ["fr-FR"])
+    assert plan.category == "kept"
+    logged = "\n".join(lines)
+    assert "not checked" in logged and "SECRET123" not in logged and "<hidden>" in logged
 
 
 def test_concurrent_runs_merge_their_cache_entries(main, monkeypatch, tmp_path):
@@ -300,6 +332,18 @@ def test_concurrent_runs_merge_their_cache_entries(main, monkeypatch, tmp_path):
     waiting.save()
     saved = main.OcrCache(path).data["k"]
     assert saved["text"] == "SAW" and saved["dark"] == 0.0 and saved["color"] == 0.8
+
+
+def test_the_review_page_knows_every_colored_logo(main, fake, monkeypatch):
+    """Regression: the Colored filter and badge only looked at the mention, which can be another one."""
+    import html_report
+    plan = main.Plan()
+    plan.category, plan.mention, plan.colored = "replace", "original", True
+    card = html_report.card("Films", FakeItem([]), "Saw (2004)", plan, None, None, True, "Logo to replace",
+                            "Original title")
+    assert card["colored"] is True
+    source = open(html_report.__file__, encoding="utf-8").read()
+    assert '["colored", "Colored", c => c.colored]' in source
 
 
 # --- locked logos set by the script ------------------------------------------------
@@ -345,3 +389,78 @@ def test_a_locked_script_logo_stays_locked_without_the_option(main, fake, monkey
     monkeypatch.setattr(main, "PREFER_COLOR", False)
     logos = [FakeLogo("white#1", selected=True), FakeLogo("color#2")]
     assert main.plan_item(None, FakeItem(logos, locked=True), logos, lambda *a: None, opts(), ["fr-FR"]).category == "locked"
+
+
+# --- third review --------------------------------------------------------------------
+
+def test_a_colored_logo_with_the_original_title_is_flagged_original(main, fake, monkeypatch):
+    """Regression: when Quebec keeps the original title, a colored logo showing it got "French inferred"."""
+    titles = ("Journal intime d'un viol", "Black Box Diaries", "Black Box Diaries")
+    LOGOS["bb_white"], LOGOS["bb_color"] = ("BLACK BOX DIARIES", 0.0), ("BLACK BOX DIARIES", 0.8)
+    try:
+        logos = [FakeLogo("bb_white#1", selected=True), FakeLogo("bb_color#2")]
+        plan = plan_with(main, monkeypatch, logos, quebec_titles=titles)
+        assert plan.colored and plan.mention == "original"
+    finally:
+        del LOGOS["bb_white"], LOGOS["bb_color"]
+
+
+def test_journals_of_runs_started_in_the_same_second_are_read(main, tmp_path):
+    journal(main, tmp_path, "2026-10-01_10h00m00_application", [{"ratingKey": 7, "after": "a"}])
+    journal(main, tmp_path, "2026-10-01_10h00m00_application_2", [{"ratingKey": 7, "after": "b"}])
+    journal(main, tmp_path, "2026-10-01_11h00m00_application", [{"ratingKey": 8, "after": "c"}])
+    (tmp_path / "logs" / "2026-10-02_10h00m00_application").mkdir()
+    (tmp_path / "logs" / "2026-10-02_10h00m00_application" / "undo.json").write_text('{"entries": null}')
+    assert main.script_set_logos(str(tmp_path / "logs")) == {"7": "b", "8": "c"}
+
+
+def test_a_failed_coverage_read_only_leaves_that_candidate_out(main, fake, monkeypatch):
+    real = main.OCR.coverage
+
+    def coverage(plex, image):
+        if image.key.startswith("color#2"):
+            raise OSError("download failed")
+        return real(plex, image)
+    monkeypatch.setattr(main.OCR, "coverage", coverage)
+    logos = [FakeLogo("white#1"), FakeLogo("color#2"), FakeLogo("color#3")]
+    assert alternative(main, logos, logos[0])[0] == 2
+
+
+def test_an_unknown_coverage_never_leaves_a_logo_out(main, fake, monkeypatch):
+    """Opaque logos: their background cannot be told from their letters (coverage None)."""
+    COVERS["japanese"] = None
+    try:
+        logos = [FakeLogo("white#1"), FakeLogo("japanese#2")]
+        assert alternative(main, logos, logos[0])[0] == 1
+    finally:
+        COVERS["japanese"] = 0.05
+
+
+def test_read_logo_cannot_measure_an_opaque_logo(monkeypatch):
+    from PIL import Image
+    img = Image.new("RGBA", (200, 100), (0, 0, 0, 255))  # no transparency at all
+    monkeypatch.setattr(q, "_engine", lambda: (lambda arr: ([([[0, 0], [10, 0], [10, 10], [0, 10]], "SAW", 0.9)], None)))
+    assert q.read_logo(img) == ("SAW", None)
+
+
+def test_coverage_reads_an_old_entry_again_and_keeps_its_measures(main, monkeypatch, tmp_path):
+    """Readings cached before the coverage existed: the logo is read again, its colors are kept."""
+    from PIL import Image
+    monkeypatch.setattr(main, "fetch_image", lambda plex, image: Image.new("RGBA", (10, 10), (200, 30, 30, 255)))
+    reads = []
+    monkeypatch.setattr(main.quebec, "read_logo", lambda img: reads.append(1) or ("SAW", 0.7))
+    cache = main.OcrCache(str(tmp_path / "cache.json"))
+    cache.data["k"] = {"text": "SAW", "w": 10, "h": 10, "v": q.OCR_VERSION, "color": 0.9, "dark": 0.1}
+    assert cache.coverage(None, "k") == 0.7 and cache.coverage(None, "k") == 0.7
+    assert reads == [1] and cache.data["k"]["dark"] == 0.1 and cache.data["k"]["v"] == q.OCR_VERSION
+
+
+def test_the_cache_survives_odd_values_on_disk(main, tmp_path):
+    path = tmp_path / "cache.json"
+    path.write_text('{"k": "not a dict"}')
+    cache = main.OcrCache(str(path))
+    cache.data["k"] = {"dark": 0.0}
+    cache.changed.add("k")
+    cache.dirty = True
+    cache.save()
+    assert main.OcrCache(str(path)).data["k"] == {"dark": 0.0}

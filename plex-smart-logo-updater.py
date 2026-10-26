@@ -80,6 +80,8 @@ PLEX_TOKEN = os.environ.get("PLEX_TOKEN", "YOUR_PLEX_TOKEN")
 TARGET_LIBRARIES = [s.strip() for s in os.environ.get("PLEX_LIBRARIES", "Movies,TV Shows").split(",")]
 LANGUAGES_SETTING = os.environ.get("PLEX_LANGUAGES", "auto").strip() or "auto"
 FALLBACK_LANGUAGE = "en-US"
+
+
 def env_flag(name, default):
     """A yes/no setting; missing or empty (configure.py writes empty keys) means the default."""
     value = os.environ.get(name, "").strip().lower()
@@ -411,14 +413,29 @@ class OcrCache:
             return entry["text"], (entry["w"], entry["h"])
         self.misses += 1
         img = fetch_image(plex, logo_or_url)
-        text = quebec.read_text(img, poster=poster)
+        if poster:
+            text, cover = quebec.read_text(img, poster=True), None
+        else:
+            text, cover = quebec.read_logo(img)
         # Measures taken before the reading (color, dark share) are kept
         self.data[key] = dict(entry or {}, text=text, w=img.width, h=img.height, v=quebec.OCR_VERSION)
         if not poster:
-            self.data[key]["color"] = colorfulness(img)
+            self.data[key].update(color=colorfulness(img), cover=cover)
         self.dirty = True
         self.changed.add(key)
         return text, img.size
+
+    def coverage(self, plex, logo_or_url):
+        """
+        Share of the logo covered by the text read (0..1), None when it cannot be measured (a
+        logo without transparency). Older readings did not keep it: the logo is read again.
+        """
+        entry = self.data.get(logo_id(logo_or_url))
+        if entry is None or entry.get("v") != quebec.OCR_VERSION or "cover" not in entry:
+            if entry is not None:
+                entry.pop("v", None)  # forces read() to read the logo again
+            self.read(plex, logo_or_url)
+        return self.data[logo_id(logo_or_url)]["cover"]
 
     def color(self, plex, logo_or_url):
         """How colorful the logo is (0 = white/grey/black, 1 = very colorful)."""
@@ -454,7 +471,7 @@ class OcrCache:
         except (OSError, ValueError):
             on_disk = {}
         # Entries are merged, not replaced: another run may have read a logo this one only measured
-        on_disk.update({key: dict(on_disk.get(key) or {}, **self.data[key])
+        on_disk.update({key: dict(on_disk[key] if isinstance(on_disk.get(key), dict) else {}, **self.data[key])
                         for key in self.changed if key in self.data})
         self.data = on_disk
         tmp = f"{self.path}.{os.getpid()}.tmp"
@@ -496,6 +513,10 @@ SAME_STYLE = 0.12
 WHITE_MAX = 0.05
 COLORED_MIN = 0.2
 DARK_MAX = 0.15
+# A colored logo whose text read covers less than MIN_TEXT_COVER of it, and less than half of
+# what it covers on the white logo, is left out: most of it is not read (e.g. a big Japanese
+# title with a small English subtitle, the only part the OCR engine reads)
+MIN_TEXT_COVER = 0.25
 COLOR_CANDIDATES = 15
 
 OCR = OcrCache(OCR_CACHE_PATH)
@@ -593,6 +614,7 @@ def colored_alternative(plex, logos, chosen, titles, quebec_titles=None, exclude
     shown = names[scores.index(max(scores))]
     other = [t for t in names if quebec.normalize(t) != quebec.normalize(shown)]
     clean_needed = quebec.is_clean(text, shown)
+    chosen_cover = {}  # the white logo's coverage, measured only when a candidate needs it
     best = None
     for i, logo in colored:
         try:
@@ -607,10 +629,29 @@ def colored_alternative(plex, logos, chosen, titles, quebec_titles=None, exclude
         clean = quebec.is_clean(cand_text, shown)
         if clean_needed and not clean:
             continue
+        try:
+            if too_little_read(plex, logo, chosen, chosen_cover):
+                continue
+        except Exception:  # a failed download only leaves this candidate out
+            continue
         rank = (round(score / 0.1), clean, size[0] * size[1])
         if best is None or rank > best[0]:
             best = (rank, i, logo, cand_text)
     return none if best is None else best[1:]
+
+
+def too_little_read(plex, logo, chosen, chosen_cover):
+    """
+    True when the text read covers little of the colored logo (MIN_TEXT_COVER) and less than
+    half of what it covers on the white one. Unknown coverage (opaque logos) never leaves it out.
+    chosen_cover: a dict caching the white logo's coverage.
+    """
+    cover = OCR.coverage(plex, logo)
+    if cover is None or cover >= MIN_TEXT_COVER:
+        return False
+    if "value" not in chosen_cover:
+        chosen_cover["value"] = OCR.coverage(plex, chosen)
+    return chosen_cover["value"] is not None and cover < chosen_cover["value"] / 2
 
 
 def library_titles(item, plan, languages):
@@ -676,7 +717,7 @@ CATEGORIES = {
     "replace":    ("REPLACED",     "Logo replaced"),
     "ok":         ("OK",           "Already the right logo, nothing to do"),
     "kept":       ("KEPT",         "Skipped: a logo is already set, kept"),
-    "locked":     ("LOCKED",       "Skipped: hand-picked logo (locked)"),
+    "locked":     ("LOCKED",       "Skipped: locked logo"),
     "none":       ("NONE",         "Skipped: Plex offers no logo"),
     "check":      ("CHECK",        "Skipped: only a Quebec logo is available"),
     "refused":    ("REJECTED",     "Skipped: rejected in the review page"),
@@ -752,8 +793,10 @@ def script_command(*args):
     to the project folder when they are inside it.
     """
     def shown(arg):
-        if os.path.isabs(arg) and os.path.commonpath([HERE, os.path.abspath(arg)]) == HERE:
-            arg = os.path.relpath(arg, HERE)
+        if not arg.startswith("-"):  # a path, maybe relative to the current folder: the command cds first
+            arg = os.path.abspath(arg)
+            if os.path.commonpath([HERE, arg]) == HERE:
+                arg = os.path.relpath(arg, HERE)
         return shlex.quote(arg)
     venv = os.path.join(HERE, ".venv", "bin", "python")
     python = ".venv/bin/python" if os.path.exists(venv) else shlex.quote(sys.executable)
@@ -923,13 +966,15 @@ def script_set_logos(logs_dir=None):
     except OSError:
         names = []
     for name in names:
-        if not name.endswith("_application"):
+        if not re.search(r"_application(_\d+)?$", name):  # _2, _3… when two runs start in the same second
             continue
         for journal in ("undo.json", "annulation.json"):
             try:
                 with open(os.path.join(root, name, journal), encoding="utf-8") as f:
-                    entries = json.load(f).get("entries", [])
+                    entries = json.load(f).get("entries") or []
             except (OSError, ValueError, AttributeError):
+                continue
+            if not isinstance(entries, list):
                 continue
             for e in entries:
                 if isinstance(e, dict) and e.get("asset", LOGO.name) == LOGO.name and e.get("after") \
@@ -980,7 +1025,8 @@ def plan_item(plex, item, logos, log, opts, languages):
     if plan.current is None:
         log("  Current logo     : none")
     else:
-        who = "hand-picked (locked)" if plan.locked else "set automatically by Plex"
+        who = ("locked, set by this script" if set_by_script(item, plan.current) else "hand-picked (locked)") \
+            if plan.locked else "set automatically by Plex"
         log(f"  Current logo     : #{plan.current_index + 1} of {len(logos)} "
             f"({plan.current.provider or 'local file'}), {who}")
 
@@ -1135,7 +1181,8 @@ def prefer_colored(plex, item, plan, logos, chosen, languages, log):
         # Worked out from the colored logo's own text, like any logo picked by OCR: a French
         # title read with uncertainty is flagged "French inferred", not just "Colored"
         kind, _ = quebec.replacement_kind(text, *quebec_titles)
-        plan.mention = mention_for(kind, text, quebec_titles) if kind else "inferred"
+        plan.mention = mention_for(kind, text, quebec_titles) if kind \
+            else MENTION_OF.get(quebec.verdict(text, *quebec_titles)[0])
     else:
         plan.mention = None
     plan.mention = plan.mention or "colored"

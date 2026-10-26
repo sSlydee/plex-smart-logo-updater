@@ -93,9 +93,35 @@ def _prepare_poster(img, side=POSTER_SIDE):
     return np.array(img)
 
 
+def read_logo(img):
+    """
+    (text read on the logo in reading order, share of the logo covered by that text, 0..1).
+    A small share means most of the logo is not read: a title in a script the OCR engine
+    does not know (Japanese), or a drawing instead of letters. None for a logo without
+    transparency: its background cannot be told from its letters.
+    """
+    arr = _prepare(img)
+    result, _ = _engine()(arr)
+    opaque = np.array(img.convert("RGBA").getchannel("A")).min() == 255
+    if not result:
+        return "", None if opaque else 0.0
+    if opaque:
+        return " ".join(reading_order(result)), None
+    ink = arr[..., 0] < 128
+    boxes = np.zeros(ink.shape, bool)
+    for points, _text, _score in result:
+        xs = [int(p[0]) for p in points]
+        ys = [int(p[1]) for p in points]
+        boxes[max(0, min(ys)):max(ys) + 1, max(0, min(xs)):max(xs) + 1] = True
+    cover = round(float((ink & boxes).sum()) / max(1, int(ink.sum())), 3)
+    return " ".join(reading_order(result)), cover
+
+
 def read_text(img, poster=False):
     """Text read on the logo (or poster), in reading order (empty string if nothing is read)."""
-    result, _ = _engine()(_prepare_poster(img) if poster else _prepare(img))
+    if not poster:
+        return read_logo(img)[0]
+    result, _ = _engine()(_prepare_poster(img))
     return " ".join(reading_order(result)) if result else ""
 
 

@@ -688,6 +688,10 @@ def test_printed_commands_can_be_copied_as_is(main, monkeypatch, tmp_path):
     assert command == (f"cd '{here}' && .venv/bin/python plex-smart-logo-updater.py "
                        "--apply --choices 'logs/run 1/choices.json'")
     assert main.script_command("--undo", "/elsewhere/run").endswith("--undo /elsewhere/run")
+    monkeypatch.chdir(tmp_path)  # a relative path given from another folder stays right after the cd
+    assert main.script_command("--undo", "old/run").endswith(f"--undo {tmp_path / 'old' / 'run'}")
+    monkeypatch.chdir(here)
+    assert main.script_command("--undo", "logs/run").endswith("--undo logs/run")
 
 
 def test_a_failed_failure_alert_is_sent_again(main, tmp_path):

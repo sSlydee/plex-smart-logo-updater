@@ -422,7 +422,7 @@ Une image choisie par le script devient **verrouillée**, comme un choix manuel 
 Plex recommande souvent la version blanche ou grise d'un logo. Avec `PLEX_PREFER_COLOR=yes` (le réglage par défaut), quand le logo en place ou sur le point de l'être est blanc ou gris, le script cherche un logo en couleur parmi les 15 premiers que propose le serveur, et le propose à la place s'il affiche **le même titre**, lu par OCR.
 
 - **La langue passe avant la couleur.** Quand le titre dans la langue de la bibliothèque diffère du titre original, un logo en couleur ne remplace jamais un logo blanc qui affiche l'autre titre. Dans une bibliothèque française, par exemple, un logo en couleur avec le titre anglais ne remplace jamais un logo blanc avec le titre français.
-- **Certains logos en couleur sont écartés :** ceux avec du texte en plus (noms d'acteurs, slogans) quand le logo blanc n'affiche que le titre, ceux avec beaucoup de parties sombres (lettres noires peu visibles sur les écrans sombres de Plex), et les logos québécois dans les bibliothèques françaises.
+- **Certains logos en couleur sont écartés :** ceux avec du texte en plus (noms d'acteurs, slogans) quand le logo blanc n'affiche que le titre, ceux avec beaucoup de parties sombres (lettres noires peu visibles sur les écrans sombres de Plex), ceux dont l'OCR ne lit qu'une petite partie (un grand titre dans une écriture qu'il ne lit pas, comme le japonais, avec un petit sous-titre anglais), et les logos québécois dans les bibliothèques françaises.
 - **Les logos blancs déjà en place** sont eux aussi proposés au remplacement, y compris ceux que le script a posés et verrouillés lui-même : ses journaux d'annulation (`undo.json`) permettent de les reconnaître. Un logo que vous avez choisi à la main reste intouché, sauf avec `--replace --include-locked`.
 - **Dans la page de contrôle**, ces changements portent le badge **Colored**. En refuser un met le titre dans les [titres ignorés](#titres-ignorés), comme tout changement refusé : son logo n'est alors plus vérifié du tout, détection québécoise comprise, jusqu'à `--unignore`.
 - Le premier lancement après l'activation est plus long : les couleurs des logos sont mesurées une fois, puis gardées en cache.
@@ -483,7 +483,7 @@ Chaque fichier commence par un en-tête (date, mode, règles, légende) et se te
 | `[TO REPLACE]` / `[REPLACED]` | L'image actuelle (logo ou affiche) sera / a été remplacée (image québécoise, logo blanc avec une version en couleur, ou `--replace`) |
 | `[OK]` | Déjà le bon logo (seulement avec `--replace`) |
 | `[KEPT]` | Un logo est déjà posé : laissé tel quel |
-| `[LOCKED]` | Image choisie à la main (champ verrouillé) : laissée telle quelle |
+| `[LOCKED]` | Image verrouillée (choisie à la main, ou posée par le script sans version en couleur) : laissée telle quelle |
 | `[NONE]` | Plex ne recommande aucun logo, dans aucune langue : à choisir à la main |
 | `[CHECK]` | Image québécoise, sans remplacement satisfaisant : à faire à la main |
 | `[REJECTED]` | Avec `--choices` : refusé dans la page de contrôle |

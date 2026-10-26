@@ -420,7 +420,7 @@ An image selected by the script becomes **locked**, like a manual choice: Plex w
 Plex often recommends the white or grey version of a logo. With `PLEX_PREFER_COLOR=yes` (the default), when the logo set or about to be set is white or grey, the script looks for a colored logo among the first 15 the server offers, and proposes it instead when it shows **the same title**, read with OCR.
 
 - **The language comes before the color.** When the title in the library's language differs from the original title, a colored logo never replaces a white one showing the other title. In a German library, for example, a colored logo with the English title never replaces a white one with the German title.
-- **Some colored logos are left out:** those with extra text (actor names, taglines) when the white logo shows only the title, those with many dark parts (black lettering hard to see on Plex's dark screens), and Quebec logos in French libraries.
+- **Some colored logos are left out:** those with extra text (actor names, taglines) when the white logo shows only the title, those with many dark parts (black lettering hard to see on Plex's dark screens), those where the OCR reads only a small part (a big title in a script it does not read, such as Japanese, with a small English subtitle), and Quebec logos in French libraries.
 - **White logos already set** are proposed for replacement too, including those the script set and locked itself: its undo journals (`undo.json`) tell them apart. A logo you picked by hand stays untouched, unless you run `--replace --include-locked`.
 - **In the review page**, these changes carry the **Colored** badge. Rejecting one puts the title on the [ignore list](#ignore-list), like any rejected change: its logo is then no longer checked at all, Quebec check included, until `--unignore`.
 - The first run after turning this on takes longer: the colors of the logos are measured once, then kept in the cache.
@@ -481,7 +481,7 @@ Each file starts with a header (date, mode, rules, legend) and ends with a summa
 | `[TO REPLACE]` / `[REPLACED]` | The current image (logo or poster) will be / was replaced (Quebec image, white logo with a colored version, or `--replace`) |
 | `[OK]` | Already the right logo (only with `--replace`) |
 | `[KEPT]` | A logo is already set: left alone |
-| `[LOCKED]` | Hand-picked image (locked field): left alone |
+| `[LOCKED]` | Locked image (picked by hand, or set by the script without a colored version): left alone |
 | `[NONE]` | Plex recommends no logo in any language: pick one by hand |
 | `[CHECK]` | Quebec image, and no suitable replacement found: do it by hand |
 | `[REJECTED]` | With `--choices`: rejected in the review page |
