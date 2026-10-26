@@ -6,7 +6,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and the proje
 ## [Unreleased]
 
 ### Added
-- Colored logos (`PLEX_PREFER_COLOR`, on by default, asked by the setup wizard): when the logo set or about to be set is white or grey, a colored logo showing the same title (read with OCR) is proposed instead, among the first 15 the server offers. The language comes first (a colored English logo never replaces a white French one); logos with extra text, Quebec logos and logos with many dark parts are left out. White logos already set are proposed for replacement too, unless locked. Review page: **Colored** badge and filter.
+- Colored logos (`PLEX_PREFER_COLOR`, on by default, asked by the setup wizard): when the logo set or about to be set is white or grey, a colored logo showing the same title (read with OCR) is proposed instead, among the first 15 the server offers. The language comes first (a colored logo showing the original title never replaces a white one showing the title in the library's language, and the other way round); logos with extra text, logos with many dark parts and, in French libraries, Quebec logos are left out. White logos already set are proposed for replacement too, unless locked. Review page: **Colored** badge and filter.
 
 ### Changed
 - The OCR cache also keeps the colorfulness and dark share of logos not read yet, so they are downloaded once.
