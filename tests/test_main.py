@@ -568,7 +568,7 @@ class RecordingSender:
     def __init__(self, error):
         self.error, self.calls = error, 0
 
-    def __call__(self, session, targets, title, body, markdown=None):
+    def __call__(self, session, targets, title, body, markdown=None, link=None):
         self.calls += 1
         return [("discord", self.error)]
 
@@ -598,8 +598,8 @@ def test_notification_review_link_is_clickable_and_colored_logos_are_told_apart(
     import argparse
     sent = {}
 
-    def send(session, targets, title, body, markdown=None):
-        sent.update(title=title, markdown=markdown)
+    def send(session, targets, title, body, markdown=None, link=None):
+        sent.update(title=title, markdown=markdown, link=link)
         return [("discord", None)]
     monkeypatch.setattr(main.notifier, "send", send)
     monkeypatch.setattr(main, "LOGS_DIR", str(tmp_path))
@@ -612,6 +612,7 @@ def test_notification_review_link_is_clickable_and_colored_logos_are_told_apart(
     main.notify(opts, str(tmp_path / "run"), totals, "page", 1.0, {"1": "a", "2": "b"})
     lines = sent["markdown"].splitlines()
     assert "Review page: <https://example.org/logos/run/run/>" in lines
+    assert sent["link"] == "https://example.org/logos/run/run/"  # opened by tapping a Bark notification
     assert "• 0 addition(s), 1 Quebec logo(s) to replace, 1 white logo(s) to replace with a colored one" in lines
     assert "• Films > Saw (2004): colored logo to set" in lines
     assert "• Films > Le Pacte (2020): Quebec logo to replace" in lines
@@ -623,8 +624,8 @@ def test_notification_wording_titles_and_errors(main, monkeypatch, tmp_path):
     import argparse
     sent = {}
 
-    def send(session, targets, title, body, markdown=None):
-        sent.update(title=title, markdown=markdown)
+    def send(session, targets, title, body, markdown=None, link=None):
+        sent.update(title=title, markdown=markdown, link=link)
         return [("discord", None)]
     monkeypatch.setattr(main.notifier, "send", send)
     monkeypatch.setattr(main, "LOGS_DIR", str(tmp_path))
@@ -639,6 +640,7 @@ def test_notification_wording_titles_and_errors(main, monkeypatch, tmp_path):
     assert "• Films > Thunderbolts\\* (2025): logo added" in lines
     assert "• 1 not verified by OCR, check them in Plex" in lines
     assert "• 1 error(s): Films > Saw (2004): connection refused" in lines
+    assert sent["link"] is None  # an application has nothing to review
 
 
 def test_a_failed_failure_alert_is_sent_again(main, tmp_path):

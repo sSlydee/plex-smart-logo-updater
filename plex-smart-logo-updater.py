@@ -1904,7 +1904,8 @@ def notify(opts, run_dir, totals, page, duration, pending=None):
     markdown = "\n".join(f"`{l}`" if l.startswith("Logs")
                          else f"Review page: <{review_link(run_dir)}>" if l.startswith("Review page")
                          else f"• {notifier.escape_markdown(l)}" for l in lines)
-    results = notifier.send(HTTP, NOTIFY_TARGETS, title, body, markdown)
+    link = review_link(run_dir) if page and not opts.apply and to_do else None
+    results = notifier.send(HTTP, NOTIFY_TARGETS, title, body, markdown, link=link)
     for kind, error in results:
         print(f"Notification {kind}: {'sent' if error is None else 'failed (' + error + ')'}")
     if any(error is None for _, error in results):

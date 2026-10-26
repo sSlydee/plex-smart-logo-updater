@@ -10,6 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and the proje
 
 ### Changed
 - Logo colors are measured with numpy instead of `Image.getdata()`, which Pillow 14 removes (same values, the cache stays valid).
+- Bark: tapping a dry run's notification opens its review page (`url` field, also sent to generic webhooks), when `REVIEW_URL` is set.
 - The OCR cache also keeps the colorfulness and dark share of logos not read yet, so they are downloaded once.
 
 ### Fixed

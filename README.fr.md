@@ -272,7 +272,9 @@ Avec `--notify` (inclus dans l'analyse automatique), le script envoie un résum�
 | Discord | `https://discord.com/api/webhooks/…` |
 | Bark (serveur officiel) | `https://api.day.app/<votre clé>` |
 | Bark (auto-hébergé) | `bark:https://mon-serveur-bark.example/<votre clé>` |
-| Webhook générique (POST JSON avec `title`, `message`, `text`) | `json:https://example.org/hook` |
+| Webhook générique (POST JSON avec `title`, `message`, `text`, et `url` pour une page de contrôle) | `json:https://example.org/hook` |
+
+Avec le [serveur de contrôle](#contrôler-et-appliquer-depuis-le-navigateur-facultatif) (`REVIEW_URL`), toucher une notification Bark ouvre la page de contrôle.
 
 Les adresses des webhooks ne sont jamais écrites dans les logs. Pour les changer : `.venv/bin/python configure.py --notifications`.
 

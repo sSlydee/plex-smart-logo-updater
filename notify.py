@@ -67,20 +67,25 @@ def shorten_discord(text, limit=DISCORD_LIMIT):
     return "\n".join(lines[:-2])[:room] + "…\n" + tail
 
 
-def _discord(session, url, title, body):
+def _discord(session, url, title, body, link=None):
     text = shorten_discord(f"**{title}**\n{body}")
     # allowed_mentions: a "@everyone" in a title never pings the server
     return session.post(url, json={"content": text, "allowed_mentions": {"parse": []}}, timeout=20)
 
 
-def _bark(session, url, title, body):
-    # Bark: POST JSON to https://<server>/<key>
-    return session.post(url.rstrip("/"), json={"title": title, "body": body[:3000], "group": "Plex logos"},
-                        timeout=20)
+def _bark(session, url, title, body, link=None):
+    # Bark: POST JSON to https://<server>/<key>; "url" is opened when the notification is tapped
+    payload = {"title": title, "body": body[:3000], "group": "Plex logos"}
+    if link:
+        payload["url"] = link
+    return session.post(url.rstrip("/"), json=payload, timeout=20)
 
 
-def _json(session, url, title, body):
-    return session.post(url, json={"title": title, "message": body, "text": f"{title}\n{body}"}, timeout=20)
+def _json(session, url, title, body, link=None):
+    payload = {"title": title, "message": body, "text": f"{title}\n{body}"}
+    if link:
+        payload["url"] = link
+    return session.post(url, json=payload, timeout=20)
 
 
 SENDERS = {"discord": _discord, "bark": _bark, "json": _json}
@@ -104,17 +109,21 @@ def hide(text, *urls):
     return text
 
 
-def send(session, targets, title, body, markdown_body=None):
+def send(session, targets, title, body, markdown_body=None, link=None):
     """
     Sends the notification to every target. markdown_body (optional) is used for
-    Discord, which renders Markdown. Returns a list of (type, error or None).
+    Discord, which renders Markdown. link (optional, http(s) only) is opened when a
+    Bark notification is tapped, and sent as "url" to generic webhooks.
+    Returns a list of (type, error or None).
     """
+    if link and not link.startswith(("http://", "https://")):
+        link = None  # a local file path cannot be opened from a phone
     results = []
     for kind, url in targets:
         text = markdown_body if (kind == "discord" and markdown_body) else body
         for attempt in range(RETRIES + 1):
             try:
-                r = SENDERS[kind](session, url, title, text)
+                r = SENDERS[kind](session, url, title, text, link)
                 r.raise_for_status()
                 results.append((kind, None))
                 break

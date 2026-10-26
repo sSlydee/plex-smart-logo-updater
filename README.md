@@ -270,7 +270,9 @@ With `--notify` (included in the automatic run), the script sends a summary **on
 | Discord | `https://discord.com/api/webhooks/…` |
 | Bark (official server) | `https://api.day.app/<your key>` |
 | Bark (self-hosted) | `bark:https://my-bark-server.example/<your key>` |
-| Generic webhook (POST JSON with `title`, `message`, `text`) | `json:https://example.org/hook` |
+| Generic webhook (POST JSON with `title`, `message`, `text`, and `url` for a review page) | `json:https://example.org/hook` |
+
+With the [review server](#review-and-apply-from-the-browser-optional) (`REVIEW_URL`), tapping a Bark notification opens the review page.
 
 Webhook addresses are never written to the logs. To change them: `.venv/bin/python configure.py --notifications`.
 

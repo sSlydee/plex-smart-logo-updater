@@ -173,3 +173,18 @@ def test_a_long_discord_message_keeps_its_last_lines():
 
 def test_escape_markdown():
     assert notify.escape_markdown("Thunderbolts* _x_ ~y~ `z` a|b \\") == "Thunderbolts\\* \\_x\\_ \\~y\\~ \\`z\\` a\\|b \\\\"
+
+
+def test_bark_opens_the_link_when_tapped():
+    session = FakeSession()
+    targets = [("discord", "https://d/x"), ("bark", "https://b/KEY"), ("json", "https://j/x")]
+    notify.send(session, targets, "Title", "Body", link="https://example.org/logos/run/a/")
+    discord, bark, generic = session.calls
+    assert bark[1]["url"] == generic[1]["url"] == "https://example.org/logos/run/a/"
+    assert "url" not in discord[1]
+
+
+def test_a_local_review_page_is_not_sent_as_a_link():
+    session = FakeSession()
+    notify.send(session, [("bark", "https://b/KEY")], "Title", "Body", link="/home/me/logs/run/review.html")
+    assert "url" not in session.calls[0][1]
