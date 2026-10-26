@@ -3,7 +3,7 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
-## [Unreleased]
+## [1.8.0] - 2026-10-26
 
 ### Added
 - Colored logos (`PLEX_PREFER_COLOR`, on by default, asked by the setup wizard): when the logo set or about to be set is white or grey, a colored logo showing the same title (read with OCR) is proposed instead, among the first 15 the server offers. The language comes first (a colored logo showing the original title never replaces a white one showing the title in the library's language, and the other way round); when the white logo shows only the title, logos with extra text are left out, and so are logos with many dark parts, logos where the text read covers little of the logo compared with the white one (a big Japanese title with a small English subtitle, the only part the OCR engine reads) and, in French libraries, Quebec logos. The first run after the upgrade takes longer: the colors of the logos are measured once, then cached. White logos already set are proposed for replacement too, including locked ones the script set itself (it locks the logos it sets; its undo journals, `undo.json` or the older `annulation.json`, tell them apart). Logos picked by hand stay untouched. Review page: **Colored** badge and filter (also for colored logos that carry another mention). On titles whose Quebec title differs, the mention is worked out from the colored logo's own text (e.g. "French inferred"). Rejecting a colored proposal puts the title on the ignore list, like any rejected change.
@@ -187,6 +187,7 @@ First release.
 - `install.sh` and a setup wizard (`configure.py`) with a Plex connection test, library picker, webhook test and cron setup; single steps can be redone (`--token`, `--libraries`, `--notifications`, `--cron`…).
 - Notifications to Discord, Bark or any JSON webhook (`--notify`), sent only when there is something to do; clear message and notification when the Plex token is rejected.
 
+[1.8.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.8.0
 [1.7.2]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.7.2
 [1.7.1]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.7.1
 [1.7.0]: https://github.com/sSlydee/plex-smart-logo-updater/releases/tag/v1.7.0
