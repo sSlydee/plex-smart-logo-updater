@@ -14,6 +14,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and the proje
 ### Fixed
 - Discord notifications: the review page link is no longer in code formatting, so it can be clicked.
 - Notifications: white logos replaced with colored ones are counted and named apart ("colored logo to set") instead of as Quebec logos.
+- Notifications are tried again (twice, waiting as long as the server asks, 30 s at most) after a rate limit, a server error or a connection error, instead of waiting for the next run.
+- Notification wording: a dry run says "to replace" (not "replaced"); an application asks to check unverified logos in Plex instead of "look at them first"; errors are named (the first three).
+- Discord: `*`, `_`, `~`, `` ` `` and `|` in titles are shown as is instead of formatting the message; a long message is cut before its last lines, so the review link is kept; mentions (`@everyone`) never ping.
 
 ## [1.7.2] - 2026-09-30
 

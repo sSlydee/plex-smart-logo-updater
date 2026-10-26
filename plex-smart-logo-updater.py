@@ -1877,27 +1877,32 @@ def notify(opts, run_dir, totals, page, duration, pending=None):
     lines = []
     if to_do:
         colored = len(colored_replacements(totals))
-        line = f"{len(totals['add'])} addition(s), {len(totals['replace']) - colored} Quebec logo(s) replaced"
+        done = "replaced" if opts.apply else "to replace"
+        line = f"{len(totals['add'])} addition(s), {len(totals['replace']) - colored} Quebec logo(s) {done}"
         if colored:
-            line += f", {colored} white logo(s) replaced with a colored one"
+            line += f", {colored} white logo(s) {done} with a colored one"
         if totals["poster_replace"]:
-            line += f", {len(totals['poster_replace'])} Quebec poster(s) replaced"
+            line += f", {len(totals['poster_replace'])} Quebec poster(s) {done}"
         lines.append(line)
         lines.extend(change_titles(totals, opts.apply))
-    if totals["unverified"]:
-        lines.append(f"{len(totals['unverified'])} not verified by OCR, look at them first")
+    if totals["unverified"] and to_do:
+        lines.append(f"{len(totals['unverified'])} not verified by OCR, "
+                     + ("check them in Plex" if opts.apply else "look at them first"))
     if new_manual:
         lines.append(f"{len(new_manual)} new title(s) to handle by hand ({len(manual)} in total): "
                      + ", ".join(new_manual[:5]) + ("…" if len(new_manual) > 5 else ""))
     if totals["error"]:
-        lines.append(f"{len(totals['error'])} error(s)")
+        lines.append(f"{len(totals['error'])} error(s): "
+                     + "; ".join(shorten(e, 100) for e in totals["error"][:3])
+                     + ("…" if len(totals["error"]) > 3 else ""))
     if page and not opts.apply and to_do:
         lines.append(f"Review page: {review_link(run_dir)}")
     lines.append(f"Logs: {os.path.basename(run_dir.rstrip('/'))} ({minutes(duration)})")
     body = "\n".join(lines)
     # Discord: the review link stays out of code formatting, or it could not be clicked
-    markdown = "\n".join(f"`{l}`" if l.startswith("Logs") else l if l.startswith("Review page") else f"• {l}"
-                         for l in lines)
+    # Titles are escaped: "Thunderbolts*" is not formatting
+    markdown = "\n".join(f"`{l}`" if l.startswith("Logs") else l if l.startswith("Review page")
+                         else f"• {notifier.escape_markdown(l)}" for l in lines)
     results = notifier.send(HTTP, NOTIFY_TARGETS, title, body, markdown)
     for kind, error in results:
         print(f"Notification {kind}: {'sent' if error is None else 'failed (' + error + ')'}")

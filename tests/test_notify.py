@@ -49,7 +49,7 @@ def test_send_payloads():
     results = notify.send(session, targets, "Title", "Body", markdown_body="**Body**")
     assert results == [("discord", None), ("bark", None), ("json", None)]
     discord, bark, generic = session.calls
-    assert discord == ("https://d/x", {"content": "**Title**\n**Body**"})
+    assert discord == ("https://d/x", {"content": "**Title**\n**Body**", "allowed_mentions": {"parse": []}})
     assert bark[0] == "https://b/KEY" and bark[1]["title"] == "Title" and bark[1]["body"] == "Body"
     assert generic[1] == {"title": "Title", "message": "Body", "text": "Title\nBody"}
 
@@ -119,3 +119,57 @@ def test_connection_errors_hide_the_secrets():
         assert error and "SECRETWEBHOOKTOKEN" not in error and "SECRETBARKKEY" not in error
     error = notify.heartbeat(FailingSession(), "https://kuma.example.org/api/push/SECRETPUSH1?status=up&msg=OK", False)
     assert error and "SECRETPUSH1" not in error
+
+
+class StatusError(Exception):
+    def __init__(self, status, headers=None):
+        super().__init__(f"{status} error")
+        self.response = type("R", (), {"status_code": status, "headers": headers or {}})()
+
+
+class FlakySession:
+    """Fails with the given errors first, then works."""
+
+    def __init__(self, *errors):
+        self.errors, self.calls = list(errors), 0
+
+    def post(self, url, json=None, timeout=None):
+        self.calls += 1
+        error = self.errors.pop(0) if self.errors else None
+
+        class Response:
+            def raise_for_status(self):
+                if error:
+                    raise error
+        return Response()
+
+
+def test_a_temporary_refusal_is_tried_again(monkeypatch):
+    """Regression: a Discord rate limit (429) lost the notification until the next run, a week later."""
+    waits = []
+    monkeypatch.setattr(notify.time, "sleep", waits.append)
+    session = FlakySession(StatusError(429, {"Retry-After": "2.5"}), StatusError(503))
+    assert notify.send(session, [("discord", "https://d/x")], "Title", "Body") == [("discord", None)]
+    assert session.calls == 3 and waits == [2.5, 5]
+
+
+def test_a_lasting_or_final_refusal_is_not_tried_again(monkeypatch):
+    monkeypatch.setattr(notify.time, "sleep", lambda s: None)
+    session = FlakySession(StatusError(404))
+    [(kind, error)] = notify.send(session, [("bark", "https://b/KEY")], "Title", "Body")
+    assert error and session.calls == 1
+    session = FlakySession(*[StatusError(500)] * 5)
+    [(kind, error)] = notify.send(session, [("bark", "https://b/KEY")], "Title", "Body")
+    assert error and session.calls == notify.RETRIES + 1
+
+
+def test_a_long_discord_message_keeps_its_last_lines():
+    """The review link and the logs folder are the last two lines: they survive the cut."""
+    body = "\n".join(f"• title {i}" * 10 for i in range(100)) + "\nReview page: https://x/run/a_b/\n`Logs: a_b`"
+    text = notify.shorten_discord(body)
+    assert len(text) <= notify.DISCORD_LIMIT
+    assert text.endswith("Review page: https://x/run/a_b/\n`Logs: a_b`")
+
+
+def test_escape_markdown():
+    assert notify.escape_markdown("Thunderbolts* _x_ ~y~ `z` a|b \\") == "Thunderbolts\\* \\_x\\_ \\~y\\~ \\`z\\` a\\|b \\\\"

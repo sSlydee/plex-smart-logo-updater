@@ -12,8 +12,15 @@ Without a prefix: discord.com/api/webhooks addresses are Discord, api.day.app
 addresses are Bark, anything else is a generic webhook.
 """
 import re
+import time
+
+import requests
 
 KINDS = ("discord", "bark", "json")
+DISCORD_LIMIT = 1900   # Discord refuses messages over 2000 characters
+RETRIES = 2            # new attempts after a temporary refusal (rate limit, server error) or a connection error
+RETRY_STATUSES = (429, 500, 502, 503, 504)
+MAX_RETRY_WAIT = 30    # seconds, whatever the server asks
 
 
 def parse_targets(value):
@@ -40,9 +47,30 @@ def parse_targets(value):
     return targets
 
 
+def escape_markdown(text):
+    """Text shown as is on Discord: *, _, ~, `, | and \\ in titles are not formatting."""
+    return re.sub(r"([\\*_~`|])", r"\\\1", text)
+
+
+def shorten_discord(text, limit=DISCORD_LIMIT):
+    """
+    A message that fits in Discord. Its last two lines (the review link and the logs
+    folder of a run) are kept: the lines before them are cut instead.
+    """
+    if len(text) <= limit:
+        return text
+    lines = text.split("\n")
+    tail = "\n".join(lines[-2:]) if len(lines) > 2 else ""
+    room = limit - len(tail) - 2
+    if room < 100:  # the last lines alone are too long: plain cut
+        return text[:limit - 1] + "…"
+    return "\n".join(lines[:-2])[:room] + "…\n" + tail
+
+
 def _discord(session, url, title, body):
-    text = f"**{title}**\n{body}"
-    return session.post(url, json={"content": text[:1900]}, timeout=20)
+    text = shorten_discord(f"**{title}**\n{body}")
+    # allowed_mentions: a "@everyone" in a title never pings the server
+    return session.post(url, json={"content": text, "allowed_mentions": {"parse": []}}, timeout=20)
 
 
 def _bark(session, url, title, body):
@@ -84,14 +112,34 @@ def send(session, targets, title, body, markdown_body=None):
     results = []
     for kind, url in targets:
         text = markdown_body if (kind == "discord" and markdown_body) else body
-        try:
-            r = SENDERS[kind](session, url, title, text)
-            r.raise_for_status()
-            results.append((kind, None))
-        except Exception as e:
-            # A webhook address is a secret: never copy it into the logs
-            results.append((kind, hide(e, url)))
+        for attempt in range(RETRIES + 1):
+            try:
+                r = SENDERS[kind](session, url, title, text)
+                r.raise_for_status()
+                results.append((kind, None))
+                break
+            except Exception as e:
+                wait = retry_wait(e)
+                if wait is None or attempt == RETRIES:
+                    # A webhook address is a secret: never copy it into the logs
+                    results.append((kind, hide(e, url)))
+                    break
+                time.sleep(wait)
     return results
+
+
+def retry_wait(error):
+    """Seconds to wait before trying again, or None when trying again is pointless (e.g. a 404)."""
+    if isinstance(error, (requests.ConnectionError, requests.Timeout)):
+        return 5
+    response = getattr(error, "response", None)
+    if response is None or response.status_code not in RETRY_STATUSES:
+        return None
+    try:
+        wait = float(response.headers.get("Retry-After", 5))
+    except (TypeError, ValueError):
+        wait = 5
+    return min(max(wait, 1), MAX_RETRY_WAIT)
 
 
 def heartbeat(session, url, ok, message="", duration_seconds=None):

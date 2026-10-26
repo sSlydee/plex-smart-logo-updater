@@ -612,9 +612,33 @@ def test_notification_review_link_is_clickable_and_colored_logos_are_told_apart(
     main.notify(opts, str(tmp_path / "run"), totals, "page", 1.0, {"1": "a", "2": "b"})
     lines = sent["markdown"].splitlines()
     assert "Review page: https://example.org/logos/run/run/" in lines
-    assert "• 0 addition(s), 1 Quebec logo(s) replaced, 1 white logo(s) replaced with a colored one" in lines
+    assert "• 0 addition(s), 1 Quebec logo(s) to replace, 1 white logo(s) to replace with a colored one" in lines
     assert "• Films > Saw (2004): colored logo to set" in lines
     assert "• Films > Le Pacte (2020): Quebec logo to replace" in lines
+
+
+def test_notification_wording_titles_and_errors(main, monkeypatch, tmp_path):
+    """Regression: an applied run still said 'look at them first', errors were not named and
+    a '*' in a title was Discord formatting."""
+    import argparse
+    sent = {}
+
+    def send(session, targets, title, body, markdown=None):
+        sent.update(title=title, markdown=markdown)
+        return [("discord", None)]
+    monkeypatch.setattr(main.notifier, "send", send)
+    monkeypatch.setattr(main, "LOGS_DIR", str(tmp_path))
+    monkeypatch.setattr(main, "NOTIFY_TARGETS", [("discord", "https://d/x")])
+    totals = main.empty_results()
+    totals["add"] = ["Films > Thunderbolts* (2025) (French)"]
+    totals["unverified"] = ["Films > Thunderbolts* (2025)"]
+    totals["error"] = ["Films > Saw (2004): connection refused"]
+    main.notify(argparse.Namespace(apply=True, rating_keys=None, choices=None), str(tmp_path / "run"), totals, None, 1.0)
+    lines = sent["markdown"].splitlines()
+    assert "• 1 addition(s), 0 Quebec logo(s) replaced" in lines
+    assert "• Films > Thunderbolts\\* (2025): logo added" in lines
+    assert "• 1 not verified by OCR, check them in Plex" in lines
+    assert "• 1 error(s): Films > Saw (2004): connection refused" in lines
 
 
 def test_a_failed_failure_alert_is_sent_again(main, tmp_path):
