@@ -13,7 +13,8 @@ Quebec logo is never set, and a Quebec logo set by Plex is replaced with a logo
 showing the French (or original) title when one exists.
 
 By default only titles WITHOUT a logo are handled: an existing logo is never
-replaced unless it is a Quebec one.
+replaced unless it is a Quebec one, or a white/grey one when a colored logo shows
+the same title (PLEX_PREFER_COLOR, on by default).
 
 Posters (--posters, or PLEX_POSTERS=yes): Plex picks Quebec posters too. When
 the Quebec title differs from the French title, the current poster is read and a
@@ -35,6 +36,7 @@ or in environment variables, which take precedence:
   HEALTHCHECK_URL Uptime Kuma push URL (or healthchecks.io URL) pinged after every run
   REVIEW_URL      public address of review_server.py, linked in the notifications
   PLEX_POSTERS    "yes": also replace Quebec posters on every run (same as --posters)
+  PLEX_PREFER_COLOR  "no": keep white/grey logos even when a colored one shows the same title (default: yes)
 
 See --help for the options.
 """
@@ -77,6 +79,7 @@ TARGET_LIBRARIES = [s.strip() for s in os.environ.get("PLEX_LIBRARIES", "Movies,
 LANGUAGES_SETTING = os.environ.get("PLEX_LANGUAGES", "auto").strip() or "auto"
 FALLBACK_LANGUAGE = "en-US"
 CHECK_POSTERS = os.environ.get("PLEX_POSTERS", "no").strip().lower() in ("1", "yes", "on", "true")
+PREFER_COLOR = os.environ.get("PLEX_PREFER_COLOR", "yes").strip().lower() in ("1", "yes", "on", "true")
 # Posters read at most per title when looking for a French poster to replace a Quebec one
 POSTER_CANDIDATES = 30
 
@@ -407,15 +410,23 @@ class OcrCache:
 
     def color(self, plex, logo_or_url):
         """How colorful the logo is (0 = white/grey/black, 1 = very colorful)."""
+        return self._tone(plex, logo_or_url, "color", colorfulness)
+
+    def dark(self, plex, logo_or_url):
+        """Share of the logo's visible pixels that are dark (hard to see on Plex's dark screens)."""
+        return self._tone(plex, logo_or_url, "dark", darkness)
+
+    def _tone(self, plex, logo_or_url, name, measure):
         key = logo_id(logo_or_url)
         entry = self.data.get(key)
-        if entry is not None and "color" in entry:
-            return entry["color"]
-        value = colorfulness(fetch_image(plex, logo_or_url))
-        if entry is not None:
-            entry["color"] = value
-            self.dirty = True
-            self.changed.add(key)
+        if entry is not None and name in entry:
+            return entry[name]
+        value = measure(fetch_image(plex, logo_or_url))
+        if entry is None:  # a logo not read yet: its measures alone are kept, the OCR fills in the rest
+            self.data[key] = entry = {}
+        entry[name] = value
+        self.dirty = True
+        self.changed.add(key)
         return value
 
     def save(self):
@@ -454,8 +465,26 @@ def colorfulness(img):
     return round(total / weight / 255, 3) if weight else 0.0
 
 
+def darkness(img):
+    """Share of the logo's visible pixels that are dark (0..1)."""
+    img = img.convert("RGBA")
+    img.thumbnail((200, 200))
+    alpha = img.getchannel("A")
+    value = img.convert("RGB").convert("HSV").getchannel("V")
+    visible = [v for a, v in zip(alpha.getdata(), value.getdata()) if a > 128]
+    return round(sum(v < 70 for v in visible) / len(visible), 3) if visible else 0.0
+
+
 # Two logos have the "same style" when their colorfulness differs by less than this
 SAME_STYLE = 0.12
+# PLEX_PREFER_COLOR: a logo below WHITE_MAX is white/grey; a replacement must reach COLORED_MIN.
+# A replacement with more than DARK_MAX dark pixels is left out: part of it (e.g. black lettering)
+# would hardly show on Plex's dark screens. Only the first COLOR_CANDIDATES logos are looked at
+# (Plex lists the best ones first).
+WHITE_MAX = 0.05
+COLORED_MIN = 0.2
+DARK_MAX = 0.15
+COLOR_CANDIDATES = 15
 
 OCR = OcrCache(OCR_CACHE_PATH)
 atexit.register(OCR.save)
@@ -515,6 +544,72 @@ def best_french_candidate(plex, logos, titles, exclude=(), plex_picks=(), curren
         return (None,) * 5
     _, i, logo, text, kind = best
     return i, logo, text, kind, mention_for(kind, text, titles)
+
+
+def colored_alternative(plex, logos, chosen, titles, quebec_titles=None, exclude=()):
+    """
+    A colored logo showing the same title as chosen, when chosen is white or grey.
+    titles = (title in the library's language, original title): the title shown by
+    chosen is found by OCR, and a candidate must show that one, not the other (the
+    language comes before the color). quebec_titles (French, Quebec, original), when
+    a Quebec logo is possible: Quebec candidates are left out.
+    Returns (index, logo, text read) or (None,) * 3.
+    """
+    none = (None,) * 3
+    if OCR.color(plex, chosen) >= WHITE_MAX:
+        return none
+    chosen_id = logo_id(chosen)
+    colored = []
+    for i, logo in enumerate(logos[:COLOR_CANDIDATES]):
+        if i in exclude or logo_id(logo) == chosen_id or logo.key == chosen_id:
+            continue
+        try:
+            if OCR.color(plex, logo) >= COLORED_MIN and OCR.dark(plex, logo) <= DARK_MAX:
+                colored.append((i, logo))
+        except Exception:
+            continue
+    if not colored:
+        return none
+    text, _ = OCR.read(plex, chosen)
+    names = [t for t in dict.fromkeys(titles) if t]
+    scores = [quebec.title_similarity(t, text) for t in names]
+    if not scores or max(scores) < 0.8:
+        return none  # the chosen logo cannot be read: whether a candidate shows the same title is unknown
+    shown = names[scores.index(max(scores))]
+    other = [t for t in names if quebec.normalize(t) != quebec.normalize(shown)]
+    clean_needed = quebec.is_clean(text, shown)
+    best = None
+    for i, logo in colored:
+        try:
+            cand_text, size = OCR.read(plex, logo)
+        except Exception:
+            continue
+        score = quebec.title_similarity(shown, cand_text)
+        if score < 0.8 or any(quebec.title_similarity(t, cand_text) > score for t in other):
+            continue
+        if quebec_titles and quebec.verdict(cand_text, *quebec_titles)[0] == quebec.QC:
+            continue
+        clean = quebec.is_clean(cand_text, shown)
+        if clean_needed and not clean:
+            continue
+        rank = (round(score / 0.1), clean, size[0] * size[1])
+        if best is None or rank > best[0]:
+            best = (rank, i, logo, cand_text)
+    return none if best is None else best[1:]
+
+
+def library_titles(item, plan, languages):
+    """(title in the library's language, original title), for colored_alternative."""
+    if plan.titles[0]:
+        return plan.titles[0], plan.titles[2]
+    try:
+        own = provider_info(item, languages[0])[0]
+        original = provider_info(item, "en-US")[0]
+    except TokenError:
+        raise
+    except Exception:
+        own = original = None
+    return own or item.title, original or getattr(item, "originalTitle", None) or item.title
 
 
 def best_french_poster(plex, posters, titles, exclude=(), plex_picks=()):
@@ -585,6 +680,7 @@ MENTIONS = {
     "inferred":   ("FRENCH INFERRED", "the French title is read on the logo, the Quebec words are missing"),
     "original":   ("ORIGINAL TITLE", "the logo shows the original title, neither French nor Quebec"),
     "unverified": ("NOT VERIFIED", "logo unreadable by OCR, set without verification: check it"),
+    "colored":    ("COLORED", "a colored logo showing the same title is picked instead of a white/grey one"),
 }
 MENTION_OF = {quebec.FR_GUESS: "inferred", quebec.ORIGINAL: "original", quebec.UNKNOWN: "unverified"}
 # locked_qc: locked logo that looks like a Quebec one (reported; only changed with --fix-locked-quebec)
@@ -661,18 +757,23 @@ def write_header(log, title, opts, extra=(), languages=None):
         log(f"    1. Use the logo Plex recommends in {', otherwise in '.join(lang_name(l) for l in languages)}.")
     if not opts.replace:
         log("    2. Only titles WITHOUT a logo are handled (even if the field is locked);")
-        log("       an existing logo is kept.")
+        log("       an existing logo is kept" + (" (except white ones, see 3)." if PREFER_COLOR else "."))
     elif opts.include_locked:
         log("    2. Existing logos may be replaced, including hand-picked ones.")
     else:
         log("    2. Logos set by Plex may be replaced; hand-picked ones never.")
-    log("    3. When the Quebec title differs from the French title, the logo is read (OCR):")
+    rule = 3
+    if PREFER_COLOR:
+        log("    3. Colors: a white/grey logo (set or about to be) gives way to a colored logo")
+        log("       showing the same title (OCR), when one exists; locked logos are kept.")
+        rule += 1
+    log(f"    {rule}. When the Quebec title differs from the French title, the logo is read (OCR):")
     log("       a Quebec logo is never set, and a Quebec logo set by Plex is replaced")
     log("       with a logo showing the French (or original) title when one exists.")
     if opts.fix_locked_quebec:
         log("       Locked logos detected as Quebec logos are ALSO replaced.")
     if getattr(opts, "posters", False):
-        log("    4. Posters: when the Quebec title differs, the poster is read (OCR) and a Quebec")
+        log(f"    {rule + 1}. Posters: when the Quebec title differs, the poster is read (OCR) and a Quebec")
         log("       poster is replaced with one showing the French (or original) title.")
         log("       Other posters are never touched.")
     log("")
@@ -683,9 +784,10 @@ def write_header(log, title, opts, extra=(), languages=None):
         log(f"    {('[' + tag + ']').ljust(width)}  {label}")
     log("")
     log("  Special mentions (after the tag, only when the Quebec title differs")
-    log("  from the French title):")
-    for tag, label in MENTIONS.values():
-        log(f"    {('[' + tag + ']').ljust(width)}  {label}")
+    log("  from the French title, except COLORED):")
+    for key, (tag, label) in MENTIONS.items():
+        if key != "colored" or PREFER_COLOR:
+            log(f"    {('[' + tag + ']').ljust(width)}  {label}")
     log(LINE)
 
 
@@ -828,6 +930,8 @@ def plan_item(plex, item, logos, log, opts, languages):
             "(reject it to keep the title without a logo)")
 
     if plan.current is not None and not opts.replace and not plan.current_is_qc:
+        if prefer_colored(plex, item, plan, logos, plan.current, languages, log):
+            return finish_plan(plan)
         plan.category, plan.detail = "kept", "a logo is already set, left untouched"
         return plan
 
@@ -884,6 +988,8 @@ def plan_item(plex, item, logos, log, opts, languages):
 
         if plan.current is not None and not plan.current_is_qc and image_size(plex, plan.current) == target_size \
                 and same_image(fetch_image(plex, plan.current), fetch_image(plex, plan.target_url)):
+            if prefer_colored(plex, item, plan, logos, plan.current, languages, log):
+                return finish_plan(plan)
             plan.category = "ok"
             plan.detail = f"the current logo is already the recommended {lang_name(plan.language)} one"
             return plan
@@ -897,6 +1003,16 @@ def plan_item(plex, item, logos, log, opts, languages):
             log(f"  Found on Plex    : no ({method}), it will be uploaded from its link")
         plan.chosen = f"{lang_name(plan.language)} logo {fmt_size(target_size)} px"
 
+    chosen = plan.candidate if plan.candidate is not None else plan.target_url
+    if prefer_colored(plex, item, plan, logos, chosen, languages, log) and plan.index == plan.current_index:
+        plan.category = "ok"
+        plan.detail = "the current logo is already a colored one showing the same title"
+        return plan
+    return finish_plan(plan)
+
+
+def finish_plan(plan):
+    """Category and details of a planned change."""
     plan.category = "replace" if plan.current is not None else "add"
     plan.detail = plan.chosen
     if plan.current is not None:
@@ -904,6 +1020,34 @@ def plan_item(plex, item, logos, log, opts, languages):
     if plan.mention:
         plan.detail += f"  [{MENTIONS[plan.mention][0]}]"
     return plan
+
+
+def prefer_colored(plex, item, plan, logos, chosen, languages, log):
+    """
+    PLEX_PREFER_COLOR: when chosen (the logo set or about to be) is white or grey and a
+    colored logo shows the same title, plans that one instead. Returns True if so.
+    """
+    if not PREFER_COLOR:
+        return False
+    exclude = {plan.current_index} if plan.current_is_qc else set()
+    quebec_titles = plan.titles if plan.titles[0] else None
+    try:
+        index, logo, text = colored_alternative(plex, logos, chosen, library_titles(item, plan, languages),
+                                                quebec_titles, exclude)
+    except TokenError:
+        raise
+    except Exception as e:
+        log(f"  Colored logo     : not checked ({e})")
+        return False
+    if logo is None:
+        return False
+    plan.index, plan.candidate, plan.target_url = index, logo, None
+    plan.chosen = f"colored logo \"{text}\""
+    if plan.mention is None:
+        plan.mention = "colored"
+    log(f"  Colored logo     : candidate #{index + 1} of {len(logos)} ({logo.provider}), \"{text}\", "
+        f"instead of a white/grey one")
+    return True
 
 
 def log_titles(log, titles):
@@ -1458,12 +1602,15 @@ def run(opts):
     if opts.choices:
         cols[-1:-1] = [("refused", "Rejected"), ("changed", "Recheck"), ("unreviewed", "NoReview")]
     cols += [("inferred", "Inferred"), ("original", "Original"), ("unverified", "NotVerif")]
+    if PREFER_COLOR:
+        cols += [("colored", "Colored")]
     if opts.posters:
         cols += [("poster_replace", "QcPoster"), ("poster_check", "PstCheck")]
     name_w = max([len(n) for n, _ in per_library] + [12])
     summary("")
     summary("  PER LIBRARY")
-    summary("  (Inferred / Original / NotVerif: special mentions, already counted in Add or Replace)")
+    summary(f"  ({' / '.join(c for k, c in cols if k in MENTIONS)}: special mentions, "
+            f"already counted in Add or Replace)")
     if opts.posters:
         summary("  (QcPoster: Quebec posters to replace; PstCheck: Quebec posters to handle by hand)")
     summary("  " + "Library".ljust(name_w) + "".join(f"{c:>9}" for _, c in cols))

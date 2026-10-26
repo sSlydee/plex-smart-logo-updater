@@ -95,8 +95,8 @@ def ask_choice(question, options, default=1):
 # config.env
 # ---------------------------------------------------------------------------
 
-KNOWN_KEYS = ("PLEX_URL", "PLEX_TOKEN", "PLEX_LIBRARIES", "PLEX_LANGUAGES", "PLEX_POSTERS", "NOTIFY_URLS",
-              "HEALTHCHECK_URL")
+KNOWN_KEYS = ("PLEX_URL", "PLEX_TOKEN", "PLEX_LIBRARIES", "PLEX_LANGUAGES", "PLEX_POSTERS", "PLEX_PREFER_COLOR",
+              "NOTIFY_URLS", "HEALTHCHECK_URL")
 
 
 def read_config(path):
@@ -111,6 +111,7 @@ def write_config(path, values):
                   header=["plex-smart-logo-updater configuration, written by configure.py.",
                           "Do not publish: this file contains your Plex token and webhooks."],
                   comments={"PLEX_POSTERS": "yes: also replace Quebec posters in French libraries",
+                            "PLEX_PREFER_COLOR": "yes: prefer a colored logo to a white/grey one showing the same title",
                             "NOTIFY_URLS": "Webhooks for --notify (Discord, Bark or json:<url>), comma-separated",
                             "HEALTHCHECK_URL": "Uptime Kuma push URL (or healthchecks.io URL), pinged after every run",
                             "REVIEW_URL": "Review server (configure.py --review-server): public address, login, "
@@ -247,6 +248,11 @@ def step_languages(values, plex=None):
     print("and propose a French one instead (in the review page, like the logos).")
     enabled = values.get("PLEX_POSTERS", "").strip().lower() in ("1", "yes", "on", "true")
     values["PLEX_POSTERS"] = "yes" if ask_yes("Also replace Quebec posters?", enabled) else "no"
+    print()
+    print("Plex often recommends the white version of a logo. The script can propose a colored")
+    print("logo instead, when one shows the same title (white logos already set are proposed too).")
+    enabled = values.get("PLEX_PREFER_COLOR", "yes").strip().lower() in ("1", "yes", "on", "true")
+    values["PLEX_PREFER_COLOR"] = "yes" if ask_yes("Prefer colored logos?", enabled) else "no"
 
 
 def describe_target(kind, url):

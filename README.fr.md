@@ -19,8 +19,9 @@
 ## Ce que fait le script
 
 - **Il ajoute les logos manquants.** Pour un titre sans logo, le script demande à Plex le logo recommandé, d'abord dans la langue de la bibliothèque, puis en anglais. C'est le logo que Plex aurait choisi lui-même, et aucune clé TMDB n'est nécessaire.
+- **Il préfère les logos en couleur.** Plex recommande souvent la version blanche d'un logo. Quand un logo en couleur affiche le même titre, le script le propose à la place, pour les titres sans logo comme pour les logos blancs déjà en place (désactivable avec `PLEX_PREFER_COLOR=no`).
 - **Il remplace les logos québécois**, et en option les affiches québécoises. Il lit le texte de l'image (OCR) et le compare aux titres français, québécois et original.
-- **Il ne touche à rien d'autre.** Un logo existant est gardé, sauf s'il est québécois. Les logos et affiches que vous avez choisis vous-même (champs verrouillés) ne sont jamais remplacés.
+- **Il ne touche à rien d'autre.** Un logo existant est gardé, sauf s'il est québécois ou s'il est blanc et qu'une version en couleur existe. Les logos et affiches que vous avez choisis vous-même (champs verrouillés) ne sont jamais remplacés.
 - **Il ne change rien sans votre accord.** Chaque lancement est une simulation par défaut. Une page de contrôle montre chaque changement (avant et après) pour que vous le validiez ou le refusiez. Chaque application peut être annulée.
 - **Il peut tourner tout seul.** Il peut analyser vos bibliothèques à intervalle régulier (chaque jour ou chaque semaine), vérifier les nouveaux titres dès que Plex les ajoute (avec Tautulli), et vous envoyer une notification (Discord, Bark…) quand il y a quelque chose à valider.
 
@@ -347,6 +348,7 @@ L'assistant écrit ce fichier et le rend lisible par vous seul, parce qu'il cont
 | `PLEX_LIBRARIES` | Bibliothèques à traiter, séparées par des virgules | `Movies,TV Shows` par défaut, par ex. `Films,Séries TV` |
 | `PLEX_LANGUAGES` | Langues par ordre de préférence. `auto` : la langue de chaque bibliothèque, puis l'anglais | `auto`, ou par exemple `fr-FR,en-US` pour toutes les bibliothèques |
 | `PLEX_POSTERS` | `yes` : remplace aussi les [affiches québécoises](#affiches-québécoises) | `no` |
+| `PLEX_PREFER_COLOR` | `no` : garde les logos blancs ou gris, voir [logos en couleur](#logos-en-couleur) | `yes` |
 | `NOTIFY_URLS` | [Webhooks](#notifications) pour `--notify`, séparés par des virgules | |
 | `HEALTHCHECK_URL` | URL de push [Uptime Kuma](#surveillance-avec-uptime-kuma) | |
 | `REVIEW_URL` | Adresse publique du [serveur de contrôle](#contrôler-et-appliquer-depuis-le-navigateur-facultatif), donnée dans les notifications | `https://example.org/logos/` |
@@ -396,7 +398,11 @@ Pendant une application, le script attend 2 s après chaque changement et 10 s t
 
 Pour chaque titre **sans logo**, le script demande au service de métadonnées de Plex (`metadata.provider.plex.tv`, avec votre token) le logo qu'il recommande : d'abord dans la langue de la bibliothèque, puis en anglais. Il cherche ce logo parmi ceux que propose votre serveur (même adresse, ou image identique) et le sélectionne. Ce n'est que si votre serveur ne l'a pas que le logo est envoyé à Plex depuis son adresse Internet.
 
-Un titre qui a déjà un logo le garde, sauf si ce logo est québécois. Un champ verrouillé *sans* logo reçoit une proposition comme n'importe quel titre sans logo. Pour le laisser vide, refusez la proposition : le titre rejoint alors les titres ignorés.
+Un titre qui a déjà un logo le garde, sauf si ce logo est québécois, ou blanc avec une version en couleur (voir ci-dessous). Un champ verrouillé *sans* logo reçoit une proposition comme n'importe quel titre sans logo. Pour le laisser vide, refusez la proposition : le titre rejoint alors les titres ignorés.
+
+### Logos en couleur
+
+Plex recommande souvent la version blanche ou grise d'un logo. Avec `PLEX_PREFER_COLOR=yes` (le réglage par défaut), quand le logo en place ou sur le point de l'être est blanc ou gris, le script cherche un logo en couleur parmi les 15 premiers que propose le serveur, et le propose à la place s'il affiche **le même titre**, lu par OCR. La langue passe en premier : un logo anglais en couleur ne remplace jamais un logo français blanc. Les logos en couleur avec du texte en plus (noms d'acteurs, slogans), les logos québécois et les logos avec beaucoup de parties sombres (lettres noires peu visibles sur les écrans sombres de Plex) sont écartés. Les logos blancs déjà en place sont eux aussi proposés au remplacement, sauf s'ils sont verrouillés. Ces changements portent le badge **Colored** dans la page de contrôle. Réglez `PLEX_PREFER_COLOR=no` pour garder le choix de Plex.
 
 ### Détection des logos québécois
 

@@ -3,6 +3,14 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/) and the project uses [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Colored logos (`PLEX_PREFER_COLOR`, on by default, asked by the setup wizard): when the logo set or about to be set is white or grey, a colored logo showing the same title (read with OCR) is proposed instead, among the first 15 the server offers. The language comes first (a colored English logo never replaces a white French one); logos with extra text, Quebec logos and logos with many dark parts are left out. White logos already set are proposed for replacement too, unless locked. Review page: **Colored** badge and filter.
+
+### Changed
+- The OCR cache also keeps the colorfulness and dark share of logos not read yet, so they are downloaded once.
+
 ## [1.7.2] - 2026-09-30
 
 ### Fixed

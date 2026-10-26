@@ -17,8 +17,9 @@
 ## What it does
 
 - **Adds the missing logos.** For a title without a logo, the script asks Plex for its recommended logo, first in the library's language and then in English. This is the logo Plex would have picked itself, and no TMDB key is needed.
+- **Prefers colored logos.** Plex often recommends the white version of a logo. When a colored logo shows the same title, the script proposes it instead, for titles without a logo and for white logos already set (turn it off with `PLEX_PREFER_COLOR=no`).
 - **Replaces Quebec logos**, and optionally Quebec posters. It reads the text on the image (OCR) and compares it with the French, Quebec and original titles.
-- **Leaves everything else alone.** An existing logo is kept unless it is a Quebec one. A logo or poster you picked yourself (a locked field) is never replaced.
+- **Leaves everything else alone.** An existing logo is kept unless it is a Quebec one or a white logo with a colored version. A logo or poster you picked yourself (a locked field) is never replaced.
 - **Changes nothing until you approve.** Each run is a dry run by default. A review page shows every change (before and after) so you can approve or reject it. Every application can be undone.
 - **Can run on its own.** It can scan your libraries on a schedule (daily or weekly), check new titles as soon as Plex adds them (with Tautulli), and send you a notification (Discord, Bark…) when there is something to review.
 
@@ -345,6 +346,7 @@ The wizard writes this file and makes it readable by you only, because it contai
 | `PLEX_LIBRARIES` | Libraries to process, comma-separated | `Movies,TV Shows` |
 | `PLEX_LANGUAGES` | Languages in order of preference. `auto`: each library's own language, then English | `auto`, or e.g. `fr-FR,en-US` for every library |
 | `PLEX_POSTERS` | `yes`: also replace [Quebec posters](#quebec-posters) | `no` |
+| `PLEX_PREFER_COLOR` | `no`: keep white/grey logos, see [colored logos](#colored-logos) | `yes` |
 | `NOTIFY_URLS` | [Webhooks](#notifications) for `--notify`, comma-separated | |
 | `HEALTHCHECK_URL` | [Uptime Kuma](#monitoring-with-uptime-kuma) push URL | |
 | `REVIEW_URL` | Public address of the [review server](#review-and-apply-from-the-browser-optional), linked in the notifications | `https://example.org/logos/` |
@@ -394,7 +396,11 @@ When applying, the script waits 2 s after each change and 10 s every 10 changes,
 
 For each title **without a logo**, the script asks Plex's metadata service (`metadata.provider.plex.tv`, with your token) which logo it recommends: first in the library's language, then in English. It looks for that logo among the ones your server offers (same address, or identical image) and selects it. Only when your server does not have it is the logo uploaded to Plex from its Internet address.
 
-A title that already has a logo keeps it, unless that logo is a Quebec one. A locked field *without* a logo gets a proposal like any other title without a logo. To keep it empty, reject the proposal: the title then goes to the ignore list.
+A title that already has a logo keeps it, unless that logo is a Quebec one or a white one with a colored version (below). A locked field *without* a logo gets a proposal like any other title without a logo. To keep it empty, reject the proposal: the title then goes to the ignore list.
+
+### Colored logos
+
+Plex often recommends the white or grey version of a logo. With `PLEX_PREFER_COLOR=yes` (the default), when the logo set or about to be set is white or grey, the script looks for a colored logo among the first 15 the server offers, and proposes it instead when it shows **the same title**, read with OCR. The language comes first: a colored English logo never replaces a white French one. Colored logos with extra text (actor names, taglines), Quebec logos, and logos with many dark parts (black lettering hard to see on Plex's dark screens) are left out. White logos already set are proposed for replacement too, unless they are locked. These changes carry the **Colored** badge in the review page. Set `PLEX_PREFER_COLOR=no` to keep Plex's pick.
 
 ### Quebec logo detection
 
