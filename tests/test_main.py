@@ -592,6 +592,31 @@ def test_a_failed_notification_is_sent_again(main, monkeypatch, tmp_path):
     assert working.calls == 1  # delivered: not repeated
 
 
+def test_notification_review_link_is_clickable_and_colored_logos_are_told_apart(main, monkeypatch, tmp_path):
+    """Regression: the review link was in code formatting (not clickable on Discord), and white logos
+    replaced with colored ones were counted as Quebec logos."""
+    import argparse
+    sent = {}
+
+    def send(session, targets, title, body, markdown=None):
+        sent.update(title=title, markdown=markdown)
+        return [("discord", None)]
+    monkeypatch.setattr(main.notifier, "send", send)
+    monkeypatch.setattr(main, "LOGS_DIR", str(tmp_path))
+    monkeypatch.setattr(main, "NOTIFY_TARGETS", [("discord", "https://d/x")])
+    monkeypatch.setattr(main, "REVIEW_URL", "https://example.org/logos/")
+    totals = main.empty_results()
+    totals["replace"] = ["Films > Saw (2004) (picked by OCR)", "Films > Le Pacte (2020) (picked by OCR, replaces a Quebec logo)"]
+    totals["colored"] = ["Films > Saw (2004)"]
+    opts = argparse.Namespace(apply=False, rating_keys=None, choices=None)
+    main.notify(opts, str(tmp_path / "run"), totals, "page", 1.0, {"1": "a", "2": "b"})
+    lines = sent["markdown"].splitlines()
+    assert "Review page: https://example.org/logos/run/run/" in lines
+    assert "• 0 addition(s), 1 Quebec logo(s) replaced, 1 white logo(s) replaced with a colored one" in lines
+    assert "• Films > Saw (2004): colored logo to set" in lines
+    assert "• Films > Le Pacte (2020): Quebec logo to replace" in lines
+
+
 def test_a_failed_failure_alert_is_sent_again(main, tmp_path):
     state = str(tmp_path / "failure.json")
     assert main.failure_is_new("down", state, save=False) is True

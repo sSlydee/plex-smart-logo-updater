@@ -11,6 +11,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and the proje
 ### Changed
 - The OCR cache also keeps the colorfulness and dark share of logos not read yet, so they are downloaded once.
 
+### Fixed
+- Discord notifications: the review page link is no longer in code formatting, so it can be clicked.
+- Notifications: white logos replaced with colored ones are counted and named apart ("colored logo to set") instead of as Quebec logos.
+
 ## [1.7.2] - 2026-09-30
 
 ### Fixed

@@ -1821,13 +1821,22 @@ def new_pending_changes(pending, state_path, targeted, save=True):
     return new if targeted else dict(pending)
 
 
+def colored_replacements(totals):
+    """Replacements of a white logo with a colored one (the others replace a Quebec logo)."""
+    colored = set(totals["colored"])
+    # Entries end with a note in parentheses ("(English)", "(picked by OCR…)"), the mentions do not
+    return [entry for entry in totals["replace"] if entry.rsplit(" (", 1)[0] in colored]
+
+
 def change_titles(totals, applied, limit=5):
     """Titles of the changes, for the notification: "Films > Real Steel (2011): logo to add"."""
+    colored = colored_replacements(totals)
     kinds = [("add", "logo added" if applied else "logo to add"),
              ("replace", "Quebec logo replaced" if applied else "Quebec logo to replace"),
              ("poster_replace", "Quebec poster replaced" if applied else "Quebec poster to replace")]
-    # Entries end with a note in parentheses ("(English)", "(picked by OCR…)"): not needed here
-    items = [f"{entry.rsplit(' (', 1)[0]}: {what}" for key, what in kinds for entry in totals[key]]
+    colored_what = "colored logo set" if applied else "colored logo to set"
+    items = [f"{entry.rsplit(' (', 1)[0]}: {colored_what if key == 'replace' and entry in colored else what}"
+             for key, what in kinds for entry in totals[key]]
     if len(items) > limit:
         items = items[:limit] + [f"… and {len(items) - limit} more"]
     return items
@@ -1867,7 +1876,10 @@ def notify(opts, run_dir, totals, page, duration, pending=None):
     title = f"Plex logos: {to_do} change(s) {verb}" if to_do else "Plex logos: titles to handle by hand"
     lines = []
     if to_do:
-        line = f"{len(totals['add'])} addition(s), {len(totals['replace'])} Quebec logo(s) replaced"
+        colored = len(colored_replacements(totals))
+        line = f"{len(totals['add'])} addition(s), {len(totals['replace']) - colored} Quebec logo(s) replaced"
+        if colored:
+            line += f", {colored} white logo(s) replaced with a colored one"
         if totals["poster_replace"]:
             line += f", {len(totals['poster_replace'])} Quebec poster(s) replaced"
         lines.append(line)
@@ -1883,7 +1895,9 @@ def notify(opts, run_dir, totals, page, duration, pending=None):
         lines.append(f"Review page: {review_link(run_dir)}")
     lines.append(f"Logs: {os.path.basename(run_dir.rstrip('/'))} ({minutes(duration)})")
     body = "\n".join(lines)
-    markdown = "\n".join(f"• {l}" if not l.startswith(("Review page", "Logs")) else f"`{l}`" for l in lines)
+    # Discord: the review link stays out of code formatting, or it could not be clicked
+    markdown = "\n".join(f"`{l}`" if l.startswith("Logs") else l if l.startswith("Review page") else f"• {l}"
+                         for l in lines)
     results = notifier.send(HTTP, NOTIFY_TARGETS, title, body, markdown)
     for kind, error in results:
         print(f"Notification {kind}: {'sent' if error is None else 'failed (' + error + ')'}")
