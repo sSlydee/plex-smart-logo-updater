@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/sSlydee/plex-smart-logo-updater/actions/workflows/tests.yml/badge.svg)](https://github.com/sSlydee/plex-smart-logo-updater/actions/workflows/tests.yml) [![Release](https://img.shields.io/github/v/release/sSlydee/plex-smart-logo-updater)](https://github.com/sSlydee/plex-smart-logo-updater/releases) [![Licence : MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Des logos Plex (ClearLogo) dans la langue de chaque bibliothèque, avec l'anglais en secours. Dans les bibliothèques françaises, le script remplace aussi les logos québécois que Plex choisit par erreur, et en option les affiches québécoises.**
+**Des logos Plex (ClearLogo) dans la langue de chaque bibliothèque, avec l'anglais en secours, et en couleur quand une version en couleur existe. Dans les bibliothèques françaises, le script remplace aussi les logos québécois que Plex choisit par erreur, et en option les affiches québécoises.**
 
 🇬🇧 [English version](README.md)
 
@@ -34,7 +34,7 @@ Basé sur [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-lo
 - [Utilisation au quotidien](#utilisation-au-quotidien) : simulation, contrôle, application, contrôle depuis le navigateur, titres ignorés, annulation
 - [Automatisation](#automatisation) : analyse automatique, notifications, Tautulli, Uptime Kuma
 - [Référence](#référence) : assistant, réglages, options
-- [Comment ça marche](#comment-ça-marche) : choix de la langue, détection du Québec, affiches
+- [Comment ça marche](#comment-ça-marche) : choix du logo, logos en couleur, détection du Québec, affiches
 - [Logs](#logs)
 - [Problèmes courants](#problèmes-courants) · [Bon à savoir](#bon-à-savoir) · [Tests](#tests)
 
@@ -101,17 +101,18 @@ L'installateur crée un environnement Python dédié dans le dossier `.venv`, do
 
 Appuyez sur Entrée pour garder la valeur affichée entre `[crochets]`.
 
-1. **Adresse du serveur Plex** : l'adresse **locale** du serveur, avec son port.
+1. **Serveur Plex** : l'adresse **locale** du serveur, avec son port.
    - Le script tourne sur le serveur Plex lui-même : `http://127.0.0.1:32400`.
    - Plex tourne dans Docker sur la même machine : souvent `http://172.17.0.1:32400`.
    - Une autre machine du réseau : `http://192.168.x.x:32400`.
 
    Évitez un nom de domaine public derrière un reverse proxy. Le script envoie beaucoup de requêtes, et Fail2Ban ou CrowdSec pourraient le bloquer.
-2. **Token Plex** : collez-le. Rien ne s'affiche pendant que vous collez, c'est normal. L'assistant teste la connexion tout de suite.
-3. **Bibliothèques** : les numéros des bibliothèques à traiter, séparés par des virgules (ex. `1,3,4`), ou `all`.
-4. **Langue des logos** : gardez `auto` (la langue de chaque bibliothèque, puis l'anglais). L'assistant demande ensuite s'il faut aussi remplacer les [affiches québécoises](#affiches-québécoises).
-5. **Notifications** : facultatives. Répondez `n` pour ne pas ajouter de webhook, puis laissez vide l'URL Uptime Kuma.
-6. **Analyse automatique** : appuyer trois fois sur Entrée programme une simulation chaque lundi à 9 h (l'assistant demande ensuite l'heure et le jour). Choisissez `never` (tapez `1`) si vous préférez commencer à la main ; vous pourrez l'ajouter plus tard.
+
+   Collez ensuite votre **token Plex**. Rien ne s'affiche pendant que vous collez, c'est normal. L'assistant teste la connexion tout de suite.
+2. **Bibliothèques à traiter** : leurs numéros, séparés par des virgules (ex. `1,3,4`), ou `all`.
+3. **Langue des logos et affiches** : gardez `auto` (la langue de chaque bibliothèque, puis l'anglais). L'assistant demande ensuite s'il faut aussi remplacer les [affiches québécoises](#affiches-québécoises), et s'il faut préférer les [logos en couleur](#logos-en-couleur) (oui par défaut).
+4. **Notifications** : facultatives. Répondez `n` pour ne pas ajouter de webhook, puis laissez vide l'URL Uptime Kuma.
+5. **Analyse automatique** : appuyer trois fois sur Entrée programme une simulation chaque lundi à 9 h (l'assistant demande ensuite l'heure et le jour). Choisissez `never` (tapez `1`) si vous préférez commencer à la main ; vous pourrez l'ajouter plus tard.
 
 Vos réponses sont enregistrées dans `config.env`, un fichier lisible par vous seul.
 
@@ -121,7 +122,7 @@ Vos réponses sont enregistrées dans `config.env`, un fichier lisible par vous 
 .venv/bin/python plex-smart-logo-updater.py --html
 ```
 
-Rien n'est modifié dans Plex. La première analyse prend du temps (environ 7 minutes pour 300 films) parce qu'elle lit les logos. Les suivantes utilisent un cache et vont bien plus vite. À la fin, le résumé indique ce qui changerait et où se trouve la page de contrôle.
+Rien n'est modifié dans Plex. La première analyse prend du temps (comptez quelques minutes par centaine de titres) parce qu'elle télécharge les logos, mesure leurs couleurs et les lit. Les suivantes utilisent un cache et vont bien plus vite. À la fin, le résumé indique ce qui changerait et où se trouve la page de contrôle.
 
 > Lancez toujours le script avec `.venv/bin/python`, pas `python3` : les dépendances ne sont installées que dans `.venv`.
 
@@ -133,7 +134,13 @@ git pull
 ./install.sh --no-config
 ```
 
-`git pull` télécharge la nouvelle version, et `./install.sh --no-config` met à jour les dépendances sans reposer les questions de configuration. Vos réglages, logs et cache sont conservés. Les nouveautés sont dans [CHANGELOG.md](CHANGELOG.md).
+`git pull` télécharge la nouvelle version, et `./install.sh --no-config` met à jour les dépendances sans reposer les questions de configuration. Vos réglages, logs et cache sont conservés. Les nouveautés sont dans [CHANGELOG.md](CHANGELOG.md) : un nouveau réglage prend sa valeur par défaut tant que vous ne le changez pas (`.venv/bin/python configure.py` le propose).
+
+Si vous utilisez le [serveur de contrôle](#contrôler-et-appliquer-depuis-le-navigateur-facultatif), redémarrez-le pour qu'il passe à la nouvelle version :
+
+```bash
+systemctl --user restart plex-smart-logo-review.service
+```
 
 ### Désinstaller
 
@@ -164,7 +171,7 @@ Chaque changement passe par trois étapes : une **simulation** qui génère une 
 .venv/bin/python plex-smart-logo-updater.py --html
 ```
 
-Chaque lancement crée un dossier dans `logs/`, nommé d'après la date et le mode (`2026-09-23_18h20m05_simulation` pour une simulation). Avec `--html`, la page de contrôle `review.html` y est générée lorsqu'il y a quelque chose à contrôler.
+Chaque lancement crée un dossier dans [`logs/`](#logs). Avec `--html`, la page de contrôle `review.html` y est générée lorsqu'il y a quelque chose à contrôler.
 
 ### 2. Contrôle
 
@@ -174,7 +181,7 @@ Ouvrez `review.html` dans votre navigateur. C'est un fichier unique et autonome 
 
 - Chaque changement montre l'image actuelle et la nouvelle.
 - Tout est **validé** par défaut : cliquez sur **Reject** pour les changements que vous ne voulez pas.
-- Des filtres permettent de commencer par les cas douteux (« Not verified », « Original title », « Posters »…).
+- Des filtres permettent de commencer par les cas douteux (« Not verified », « Original title », « Colored », « Posters »…).
 - Vos choix sont gardés dans le navigateur si vous fermez la page.
 - Quand vous avez fini, cliquez sur **Export choices.json**.
 
@@ -195,7 +202,7 @@ Déposez `choices.json` dans le dossier de la simulation (le script y relit les 
 
 Seuls les changements validés sont appliqués, et ceux que vous avez refusés vont dans les [titres ignorés](#titres-ignorés). Si Plex a modifié un titre depuis la simulation, le titre n'est pas touché et reçoit le tag `[RECHECK]` : relancez une simulation.
 
-Seuls les titres présents dans `choices.json` sont examinés : l'application prend quelques secondes.
+Seuls les titres présents dans `choices.json` sont examinés. Pour ménager le serveur, le script attend 2 s après chaque changement et 10 s tous les 10 changements : environ 4 minutes pour 60 changements.
 
 Pour tout appliquer sans passer par la page de contrôle, lancez `--apply` sans `--choices`. Ce n'est pas recommandé.
 
@@ -219,9 +226,13 @@ location /logos/ {
 }
 ```
 
-- Le serveur n'écoute que sur `127.0.0.1` : on y accède par votre reverse proxy, en HTTPS. Une page de connexion protège chaque page ; la session dure 30 jours, et changer le mot de passe déconnecte tout le monde. Après 10 essais ratés d'un même visiteur en 15 minutes, la connexion lui est refusée pendant un moment ; le visiteur est reconnu par l'adresse que votre proxy ajoute à `X-Forwarded-For`, gardez donc cet en-tête dans le bloc du proxy. Après 50 essais ratés en 15 minutes, tous visiteurs confondus, la connexion est refusée à tout le monde pendant un moment (les sessions ouvertes continuent de fonctionner). Si votre proxy ajoute sa propre authentification, désactivez-la pour cette adresse (`auth_basic off;` avec nginx).
+- Le serveur n'écoute que sur `127.0.0.1` : on y accède par votre reverse proxy, en HTTPS. Une page de connexion protège chaque page. Si votre proxy ajoute sa propre authentification, désactivez-la pour cette adresse (`auth_basic off;` avec nginx).
+- Détails de sécurité :
+  - La session dure 30 jours, et changer le mot de passe déconnecte tout le monde.
+  - Après 10 essais ratés d'un même visiteur en 15 minutes, la connexion lui est refusée pendant un moment. Le visiteur est reconnu par l'adresse que votre proxy ajoute à `X-Forwarded-For` : gardez cet en-tête dans le bloc du proxy.
+  - Après 50 essais ratés en 15 minutes, tous visiteurs confondus, la connexion est refusée à tout le monde pendant un moment. Les sessions ouvertes continuent de fonctionner.
 - La page d'accueil liste les dernières simulations. Une simulation ne peut être appliquée qu'une fois (une application qui a échoué, par exemple pendant une panne de Plex, peut être relancée), et plus du tout quand une simulation plus récente la remplace (une simulation complète couvrant les mêmes bibliothèques, ou une simulation proposant exactement les mêmes changements) : appliquez plutôt celle-ci.
-- Les notifications pointent vers la page sur le serveur (`REVIEW_URL`) au lieu du chemin du fichier.
+- Les notifications pointent vers la page sur le serveur (`REVIEW_URL`) au lieu du chemin du fichier. Une application lancée depuis la page envoie sa propre notification (« N change(s) applied ») et un signal à [Uptime Kuma](#surveillance-avec-uptime-kuma).
 - Le service est un service utilisateur systemd (Linux). Sur certains serveurs, les services utilisateur s'arrêtent à la déconnexion : dans ce cas, `loginctl enable-linger` (ou votre hébergeur) les maintient actifs.
 - Pour changer l'identifiant, le mot de passe, le port ou l'adresse, relancez `configure.py --review-server` : il redémarre le service. Pour vérifier le service : `systemctl --user status plex-smart-logo-review.service`.
 
@@ -310,7 +321,7 @@ Pour traiter des titres à la main : `--rating-key 12345`, ou `--process-queue` 
 
 ### Surveillance avec Uptime Kuma
 
-Avec `HEALTHCHECK_URL`, chaque analyse (automatique, à la main ou depuis la file Tautulli) envoie un signal à un service de surveillance. Il indique **up** quand tout s'est bien passé, et **down** avec la raison en cas d'échec (token refusé, serveur injoignable, plantage). Si l'analyse automatique s'arrête complètement (cron cassé, machine éteinte…), l'absence de signal vous prévient.
+Avec `HEALTHCHECK_URL`, chaque analyse (automatique, à la main ou depuis la file Tautulli) envoie un signal à un service de surveillance. Il indique **up** quand tout s'est bien passé, et **down** avec la raison sinon (token refusé, serveur injoignable, plantage, ou erreurs sur certains titres). Si l'analyse automatique s'arrête complètement (cron cassé, machine éteinte…), l'absence de signal vous prévient.
 
 Dans [Uptime Kuma](https://github.com/louislam/uptime-kuma), allez dans **Add New Monitor > Push**. Copiez l'URL de push dans `HEALTHCHECK_URL`, ou donnez-la à `configure.py --notifications`. Réglez ensuite le **heartbeat interval** un peu au-dessus de la fréquence de votre cron, par exemple 8 jours (691200 s) pour une analyse hebdomadaire. Une URL [healthchecks.io](https://healthchecks.io/) fonctionne aussi.
 
@@ -331,13 +342,13 @@ Pour refaire une seule étape :
 | `configure.py --token` | Change **uniquement le token** : il est demandé, testé, puis enregistré |
 | `configure.py --server` | Adresse du serveur et token |
 | `configure.py --libraries` | Bibliothèques à traiter |
-| `configure.py --language` | Langue des logos et affiches québécoises |
+| `configure.py --language` | Langue des logos, affiches québécoises et logos en couleur |
 | `configure.py --notifications` | Webhooks et Uptime Kuma |
 | `configure.py --cron` | Analyse automatique |
 | `configure.py --tautulli` | Traitement de la file pour Tautulli dans un conteneur |
 | `configure.py --review-server` | [Serveur de contrôle](#contrôler-et-appliquer-depuis-le-navigateur-facultatif) |
 
-Un nouveau token n'est enregistré que si Plex l'accepte. **Si votre token change**, le script s'arrête avec « Plex token rejected: change it with: .venv/bin/python configure.py --token », et envoie aussi ce message en notification quand il est lancé avec `--notify`.
+Un nouveau token n'est enregistré que si Plex l'accepte. **Si votre token change**, le script s'arrête avec « Plex token rejected: change it with: .venv/bin/python configure.py --token », et envoie aussi ce message en notification quand il est lancé avec `--notify` (une seule fois, jusqu'à ce qu'une analyse fonctionne de nouveau).
 
 ### Réglages (`config.env`)
 
@@ -390,7 +401,9 @@ Pour utiliser un autre fichier de réglages, indiquez son chemin dans `PLEX_CONF
 
 `--help` liste toutes les options.
 
-Attention avec `--replace` : sur TMDB, un logo « français » est parfois la version québécoise, et l'OCR ne la repère pas toujours. C'est pourquoi, par défaut, le script ne remplace que les logos détectés comme québécois.
+Le code de sortie vaut 0 quand tout s'est bien passé, 2 quand certains titres ont échoué (voir `[ERROR]` dans les [logs](#logs)), et 1 quand l'analyse s'est arrêtée (Plex injoignable, token refusé…).
+
+Attention avec `--replace` : sur TMDB, un logo « français » est parfois la version québécoise, et l'OCR ne la repère pas toujours. C'est pourquoi, par défaut, le script ne remplace que les logos détectés comme québécois, et les logos blancs qui ont une version en couleur du même titre.
 
 Pendant une application, le script attend 2 s après chaque changement et 10 s tous les 10 changements, pour ménager le serveur. Les erreurs temporaires (429, 5xx) sont réessayées jusqu'à 4 fois, sauf les envois d'images, qui ne sont jamais faits deux fois.
 
@@ -400,17 +413,27 @@ Pendant une application, le script attend 2 s après chaque changement et 10 s t
 
 Pour chaque titre **sans logo**, le script demande au service de métadonnées de Plex (`metadata.provider.plex.tv`, avec votre token) le logo qu'il recommande : d'abord dans la langue de la bibliothèque, puis en anglais. Il cherche ce logo parmi ceux que propose votre serveur (même adresse, ou image identique) et le sélectionne. Ce n'est que si votre serveur ne l'a pas que le logo est envoyé à Plex depuis son adresse Internet.
 
-Un titre qui a déjà un logo le garde, sauf si ce logo est québécois, ou blanc avec une version en couleur (voir ci-dessous). Un champ verrouillé *sans* logo reçoit une proposition comme n'importe quel titre sans logo. Pour le laisser vide, refusez la proposition : le titre rejoint alors les titres ignorés.
+Un titre qui a déjà un logo le garde, sauf si ce logo est québécois, ou blanc avec une version en couleur (voir ci-dessous).
+
+Une image choisie par le script devient **verrouillée**, comme un choix manuel : Plex ne la remplace pas lors d'une actualisation, et les analyses suivantes n'y touchent plus. Un champ verrouillé *sans* logo reçoit une proposition comme n'importe quel titre sans logo. Pour le laisser vide, refusez la proposition : le titre rejoint alors les titres ignorés.
 
 ### Logos en couleur
 
-Plex recommande souvent la version blanche ou grise d'un logo. Avec `PLEX_PREFER_COLOR=yes` (le réglage par défaut), quand le logo en place ou sur le point de l'être est blanc ou gris, le script cherche un logo en couleur parmi les 15 premiers que propose le serveur, et le propose à la place s'il affiche **le même titre**, lu par OCR. La langue passe avant la couleur : quand le titre dans la langue de la bibliothèque diffère du titre original, un logo en couleur ne remplace jamais un logo blanc qui affiche l'autre titre (dans une bibliothèque française, par exemple, un logo en couleur avec le titre anglais ne remplace jamais un logo blanc avec le titre français). Quand le logo blanc n'affiche que le titre, les logos en couleur avec du texte en plus (noms d'acteurs, slogans) sont écartés. Le sont aussi les logos avec beaucoup de parties sombres (lettres noires peu visibles sur les écrans sombres de Plex), et les logos québécois dans les bibliothèques françaises. Les logos blancs déjà en place sont eux aussi proposés au remplacement, sauf s'ils sont verrouillés (seul `--replace --include-locked` touche aux logos verrouillés). Le premier lancement après l'activation est plus long : les couleurs des logos sont mesurées une fois, puis gardées en cache. Ces changements portent le badge **Colored** dans la page de contrôle. En refuser un met le titre dans les [titres ignorés](#titres-ignorés), comme tout changement refusé : son logo n'est alors plus vérifié du tout, détection québécoise comprise, jusqu'à `--unignore`. Réglez `PLEX_PREFER_COLOR=no` pour garder le choix de Plex.
+Plex recommande souvent la version blanche ou grise d'un logo. Avec `PLEX_PREFER_COLOR=yes` (le réglage par défaut), quand le logo en place ou sur le point de l'être est blanc ou gris, le script cherche un logo en couleur parmi les 15 premiers que propose le serveur, et le propose à la place s'il affiche **le même titre**, lu par OCR.
+
+- **La langue passe avant la couleur.** Quand le titre dans la langue de la bibliothèque diffère du titre original, un logo en couleur ne remplace jamais un logo blanc qui affiche l'autre titre. Dans une bibliothèque française, par exemple, un logo en couleur avec le titre anglais ne remplace jamais un logo blanc avec le titre français.
+- **Certains logos en couleur sont écartés :** ceux avec du texte en plus (noms d'acteurs, slogans) quand le logo blanc n'affiche que le titre, ceux avec beaucoup de parties sombres (lettres noires peu visibles sur les écrans sombres de Plex), et les logos québécois dans les bibliothèques françaises.
+- **Les logos blancs déjà en place** sont eux aussi proposés au remplacement, sauf s'ils sont verrouillés (seul `--replace --include-locked` touche aux logos verrouillés).
+- **Dans la page de contrôle**, ces changements portent le badge **Colored**. En refuser un met le titre dans les [titres ignorés](#titres-ignorés), comme tout changement refusé : son logo n'est alors plus vérifié du tout, détection québécoise comprise, jusqu'à `--unignore`.
+- Le premier lancement après l'activation est plus long : les couleurs des logos sont mesurées une fois, puis gardées en cache.
+
+Réglez `PLEX_PREFER_COLOR=no` pour garder le choix de Plex.
 
 ### Détection des logos québécois
 
 Cette détection ne concerne que les bibliothèques françaises : celles dont la première langue de logo est le français, hors français du Québec (avec un `PLEX_LANGUAGES` fixe comme `fr-FR,en-US`, toutes les bibliothèques). Quand les titres français (fr-FR) et québécois (fr-CA) donnés par Plex diffèrent, le script **lit le texte du logo** (OCR) et le compare aux titres français, québécois et original.
 
-- **Un logo québécois posé par Plex est remplacé** par le meilleur logo non québécois : le plus proche du titre français complet, sinon du titre original. À ressemblance égale, il préfère, dans l'ordre : un logo sans texte en plus (noms d'acteurs, slogans ; « Marvel Studios », « Disney »… sont acceptés), un logo du même style que celui remplacé (coloré ou blanc), celui que Plex recommande, puis le plus grand.
+- **Un logo québécois posé par Plex est remplacé** par le meilleur logo non québécois : le plus proche du titre français complet, sinon du titre original. À ressemblance égale, il préfère, dans l'ordre : un logo sans texte en plus (noms d'acteurs, slogans ; « Marvel Studios », « Disney »… sont acceptés), un logo du même style que celui remplacé (coloré ou blanc), celui que Plex recommande, puis le plus grand. Si le logo retenu est blanc, sa [version en couleur](#logos-en-couleur) est ensuite préférée.
 - **Un logo québécois n'est jamais ajouté.** Si Plex en recommande un, le script en cherche un autre.
 - Quand le titre français diffère du titre original et que le choix de Plex n'est pas clairement français, le script cherche un logo au titre français (ex. « HAPPY BIRTHDEAD » plutôt que « HAPPY DEATH DAY »). Quand la France garde le titre original, le choix de Plex est conservé.
 - Quand le Québec garde le titre original (*Black Box Diaries*), un logo portant ce titre n'est **pas** considéré comme québécois.
@@ -424,6 +447,8 @@ La détection est volontairement prudente : un logo existant n'est remplacé que
 | `[FRENCH INFERRED]` (français déduit) | Le titre français est lu sur le logo, et les mots propres au titre québécois en sont absents (ex. « PUSH », alors que le Québec dit « Push : La division »). Très probablement correct. |
 | `[ORIGINAL TITLE]` (titre original) | Le logo porte le titre original, ni français ni québécois (ex. « HAPPY DEATH DAY » pour *Happy Birthdead*). |
 | `[NOT VERIFIED]` (non vérifié) | L'OCR n'a pas pu lire le logo (police très stylisée, lettres espacées…). Il est posé quand même, comme Plex l'aurait fait : **à contrôler**. |
+
+Une quatrième mention, `[COLORED]`, signale seulement un [logo en couleur](#logos-en-couleur) choisi à la place d'un logo blanc.
 
 Les lectures OCR sont gardées en cache (`.cache-ocr.json`) : une nouvelle analyse ne lit que les nouvelles images.
 
@@ -455,7 +480,7 @@ Chaque fichier commence par un en-tête (date, mode, règles, légende) et se te
 | Tag | Signification |
 |---|---|
 | `[TO ADD]` / `[ADDED]` | Pas encore de logo : un logo sera / a été posé |
-| `[TO REPLACE]` / `[REPLACED]` | L'image actuelle (logo ou affiche) sera / a été remplacée (québécoise, ou `--replace`) |
+| `[TO REPLACE]` / `[REPLACED]` | L'image actuelle (logo ou affiche) sera / a été remplacée (image québécoise, logo blanc avec une version en couleur, ou `--replace`) |
 | `[OK]` | Déjà le bon logo (seulement avec `--replace`) |
 | `[KEPT]` | Un logo est déjà posé : laissé tel quel |
 | `[LOCKED]` | Image choisie à la main (champ verrouillé) : laissée telle quelle |
@@ -511,7 +536,6 @@ L'OCR ne lit pas toujours parfaitement (« TRAIT » au lieu de « TRAIN »), mai
 
 ## Bon à savoir
 
-- Une image choisie par le script devient **verrouillée**, comme un choix manuel : Plex ne la remplace pas lors d'une actualisation, et les analyses suivantes n'y touchent plus.
 - Rien n'est supprimé : l'ancien logo ou l'ancienne affiche reste disponible dans Plex (*Modifier > Logo* ou *Affiche*). Seule exception : annuler l'ajout d'un logo à un titre qui n'en avait pas.
 - Seules les images principales des films et séries sont traitées, pas celles des saisons ou des épisodes.
 - L'installateur remplace OpenCV 5, installé avec le moteur OCR, par une version plus ancienne, parce qu'OpenCV 5 plante au chargement sur certaines machines.
@@ -519,7 +543,7 @@ L'OCR ne lit pas toujours parfaitement (« TRAIT » au lieu de « TRAIN »), mai
 
 ## Tests
 
-Les tests sont construits à partir de cas réels (*Edge of Tomorrow*, *Bullet Train*, *The Banker*, *Captain America*, *Avatar*…). Ils couvrent la détection québécoise, les affiches, les notifications, les titres ignorés, l'assistant et le serveur de contrôle, et fonctionnent sans serveur Plex ni moteur OCR :
+Les tests sont construits à partir de cas réels (*Edge of Tomorrow*, *Bullet Train*, *The Banker*, *Captain America*, *Avatar*…). Ils couvrent la détection québécoise, les logos en couleur, les affiches, les notifications, les titres ignorés, l'assistant et le serveur de contrôle, et fonctionnent sans serveur Plex ni moteur OCR :
 
 ```bash
 .venv/bin/pip install pytest

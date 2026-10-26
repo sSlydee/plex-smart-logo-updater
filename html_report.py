@@ -195,7 +195,7 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
   const steps = document.getElementById("steps");
   if (DATA.apply) {
     steps.innerHTML = "<b>Read-only page:</b> these changes have already been applied to Plex. " +
-      "To undo them: <code>plex-smart-logo-updater.py --undo logs/" + esc(DATA.simulation) + " --apply</code>";
+      "To undo them, from the project folder: <code>.venv/bin/python plex-smart-logo-updater.py --undo logs/" + esc(DATA.simulation) + " --apply</code>";
     document.getElementById("footer").style.display = "none";
     document.body.style.paddingBottom = "16px";
   } else if (SERVER) {
@@ -210,7 +210,7 @@ footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel)
       "<li>Look at each change. Everything is <b>approved</b> by default: click <b>Reject</b> on the ones you do not want: when you apply, rejected titles go to the ignore list and are not proposed again (<code>--unignore</code> to undo). The filters help you start with the doubtful cases (<b>Not verified</b>).</li>" +
       "<li>Click <b>Export choices.json</b> (at the bottom).</li>" +
       "<li>Copy <code>choices.json</code> to the server, into <code>logs/" + esc(DATA.simulation) + "/</code>.</li>" +
-      "<li>Run: <code>plex-smart-logo-updater.py --apply --choices logs/" + esc(DATA.simulation) + "/choices.json</code></li></ol>" +
+      "<li>From the project folder, run: <code>.venv/bin/python plex-smart-logo-updater.py --apply --choices logs/" + esc(DATA.simulation) + "/choices.json</code></li></ol>" +
       "Your choices are kept in this browser if you close the page.";
   }
 

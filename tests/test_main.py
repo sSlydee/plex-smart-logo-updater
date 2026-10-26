@@ -677,6 +677,19 @@ def test_a_local_review_page_stays_in_code_formatting_on_discord(main, monkeypat
     assert f"`Review page: {page}`" in sent["markdown"].splitlines()
 
 
+def test_printed_commands_can_be_copied_as_is(main, monkeypatch, tmp_path):
+    """Regression: the summary printed "plex-smart-logo-updater.py --apply …" without its Python: the
+    script is not executable, so the command failed when copied."""
+    here = tmp_path / "my project"
+    (here / ".venv" / "bin").mkdir(parents=True)
+    (here / ".venv" / "bin" / "python").write_text("")
+    monkeypatch.setattr(main, "HERE", str(here))
+    command = main.script_command("--apply", "--choices", str(here / "logs" / "run 1" / "choices.json"))
+    assert command == (f"cd '{here}' && .venv/bin/python plex-smart-logo-updater.py "
+                       "--apply --choices 'logs/run 1/choices.json'")
+    assert main.script_command("--undo", "/elsewhere/run").endswith("--undo /elsewhere/run")
+
+
 def test_a_failed_failure_alert_is_sent_again(main, tmp_path):
     state = str(tmp_path / "failure.json")
     assert main.failure_is_new("down", state, save=False) is True

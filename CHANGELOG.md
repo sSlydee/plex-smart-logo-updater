@@ -15,6 +15,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/) and the proje
 - A yes/no setting left empty in `config.env` (as `configure.py` writes keys an older config lacks) means its default.
 
 ### Fixed
+- The commands printed at the end of a run (apply the approved changes, undo) and on the review page include the Python environment (`cd <project> && .venv/bin/python plex-smart-logo-updater.py …`): the script is not executable on its own, so the printed command failed when copied. `--help` examples too.
 - Discord notifications: the review page link is no longer in code formatting, so it can be clicked (wrapped in `<>`: no preview of the sign-in page).
 - Notifications: each replacement is counted and named by what it replaces: a Quebec logo, a white logo ("colored logo to set"), or another logo (`--replace`), which was also reported as a Quebec logo.
 - Notifications are tried again (twice, waiting as long as the server asks, 30 s at most) after a rate limit or a server error, instead of waiting for the next run. Failed connections are already retried by the HTTP session; after a timeout or a dropped connection the message may have arrived, so it is not sent again.

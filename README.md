@@ -2,7 +2,7 @@
 
 [![Tests](https://github.com/sSlydee/plex-smart-logo-updater/actions/workflows/tests.yml/badge.svg)](https://github.com/sSlydee/plex-smart-logo-updater/actions/workflows/tests.yml) [![Release](https://img.shields.io/github/v/release/sSlydee/plex-smart-logo-updater)](https://github.com/sSlydee/plex-smart-logo-updater/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**Plex logos (ClearLogo) in the language of each library, with English as a fallback. In French libraries, it also replaces the French-Canadian (Quebec) logos that Plex picks by mistake, and optionally the Quebec posters.**
+**Plex logos (ClearLogo) in the language of each library, with English as a fallback, and in color when a colored version exists. In French libraries, it also replaces the French-Canadian (Quebec) logos that Plex picks by mistake, and optionally the Quebec posters.**
 
 🇫🇷 [Version française](README.fr.md)
 
@@ -32,7 +32,7 @@ Based on [relkai/plex-bulk-logo-updater](https://github.com/relkai/plex-bulk-log
 - [Everyday use](#everyday-use): dry run, review, apply, review from the browser, ignore list, undo
 - [Automation](#automation): automatic run, notifications, Tautulli, Uptime Kuma
 - [Reference](#reference): setup wizard, settings, options
-- [How it works](#how-it-works): language choice, Quebec detection, posters
+- [How it works](#how-it-works): choosing a logo, colored logos, Quebec detection, posters
 - [Logs](#logs)
 - [Troubleshooting](#troubleshooting) · [Good to know](#good-to-know) · [Tests](#tests)
 
@@ -99,17 +99,18 @@ The installer creates a dedicated Python environment in the `.venv` folder, so n
 
 Press Enter to accept the value shown in `[brackets]`.
 
-1. **Plex server address**: the server's **local** address, with its port.
+1. **Plex server**: the server's **local** address, with its port.
    - The script runs on the Plex server itself: `http://127.0.0.1:32400`.
    - Plex runs in Docker on the same machine: often `http://172.17.0.1:32400`.
    - Another machine on your network: `http://192.168.x.x:32400`.
 
    Avoid a public domain name behind a reverse proxy. The script sends many requests, and Fail2Ban or CrowdSec could block it.
-2. **Plex token**: paste it. Nothing appears while you paste, which is normal. The wizard tests the connection right away.
-3. **Libraries**: the numbers of the libraries to process, separated by commas (e.g. `1,3,4`), or `all`.
-4. **Logo language**: keep `auto` (each library's own language, then English). The wizard then asks whether to also replace [Quebec posters](#quebec-posters).
-5. **Notifications**: optional. Answer `n` to skip the webhooks, then leave the Uptime Kuma URL empty.
-6. **Automatic run**: pressing Enter three times sets up a weekly dry run on Mondays at 9:00 (the wizard then asks for the hour and the day). Pick `never` (type `1`) if you would rather start by hand; you can add it later.
+
+   Then paste your **Plex token**. Nothing appears while you paste, which is normal. The wizard tests the connection right away.
+2. **Libraries to process**: their numbers, separated by commas (e.g. `1,3,4`), or `all`.
+3. **Logo language and posters**: keep `auto` (each library's own language, then English). The wizard then asks whether to also replace [Quebec posters](#quebec-posters), and whether to prefer [colored logos](#colored-logos) (yes by default).
+4. **Notifications**: optional. Answer `n` to skip the webhooks, then leave the Uptime Kuma URL empty.
+5. **Automatic run**: pressing Enter three times sets up a weekly dry run on Mondays at 9:00 (the wizard then asks for the hour and the day). Pick `never` (type `1`) if you would rather start by hand; you can add it later.
 
 Your answers are saved in `config.env`, which only you can read.
 
@@ -119,7 +120,7 @@ Your answers are saved in `config.env`, which only you can read.
 .venv/bin/python plex-smart-logo-updater.py --html
 ```
 
-Nothing is changed in Plex. The first run takes a while (about 7 minutes for 300 movies) because it reads the logos. Later runs use a cache and are much faster. At the end, the summary shows what would change and where the review page is.
+Nothing is changed in Plex. The first run takes a while (count a few minutes per hundred titles) because it downloads the logos, measures their colors and reads them. Later runs use a cache and are much faster. At the end, the summary shows what would change and where the review page is.
 
 > Always run the script with `.venv/bin/python`, not `python3`: the dependencies are only installed in `.venv`.
 
@@ -131,7 +132,13 @@ git pull
 ./install.sh --no-config
 ```
 
-`git pull` downloads the new version, and `./install.sh --no-config` updates the dependencies without asking the setup questions again. Your settings, logs and cache are kept. See [CHANGELOG.md](CHANGELOG.md) for what changed.
+`git pull` downloads the new version, and `./install.sh --no-config` updates the dependencies without asking the setup questions again. Your settings, logs and cache are kept. See [CHANGELOG.md](CHANGELOG.md) for what changed: a new setting takes its default value until you change it (`.venv/bin/python configure.py` asks about it).
+
+If you use the [review server](#review-and-apply-from-the-browser-optional), restart it so it runs the new version:
+
+```bash
+systemctl --user restart plex-smart-logo-review.service
+```
 
 ### Uninstalling
 
@@ -162,7 +169,7 @@ Every change goes through three steps: a **dry run** that writes a review page, 
 .venv/bin/python plex-smart-logo-updater.py --html
 ```
 
-Each run creates a folder in `logs/`, named after the date and mode (`2026-09-23_18h20m05_simulation` for a dry run). With `--html`, the review page `review.html` is written there when there is something to review.
+Each run creates a folder in [`logs/`](#logs). With `--html`, the review page `review.html` is written there when there is something to review.
 
 ### 2. Review
 
@@ -172,7 +179,7 @@ Open `review.html` in your browser. It is a single self-contained file: the imag
 
 - Each change shows the current image and the new one.
 - Everything is **approved** by default: click **Reject** on the changes you do not want.
-- Filters help you start with the doubtful cases ("Not verified", "Original title", "Posters"…).
+- Filters help you start with the doubtful cases ("Not verified", "Original title", "Colored", "Posters"…).
 - Your choices are kept in the browser if you close the page.
 - When you are done, click **Export choices.json**.
 
@@ -193,7 +200,7 @@ Put `choices.json` in the dry run's folder (the script reads the dry run's optio
 
 Only the approved changes are applied, and the rejected ones go to the [ignore list](#ignore-list). If Plex changed a title since the dry run, the title is left untouched and tagged `[RECHECK]`: run a new dry run.
 
-Only the titles in `choices.json` are looked at, so applying takes a few seconds.
+Only the titles in `choices.json` are looked at. To spare the server, the script waits 2 s after each change and 10 s every 10 changes: about 4 minutes for 60 changes.
 
 To apply everything without the review page, run `--apply` without `--choices`. This is not recommended.
 
@@ -217,9 +224,13 @@ location /logos/ {
 }
 ```
 
-- The server only listens on `127.0.0.1`: it is reached through your reverse proxy, in HTTPS. A sign-in page protects every page; the session lasts 30 days, and changing the password signs everyone out. After 10 failed attempts from the same visitor within 15 minutes, sign-in is refused to that visitor for a while; the visitor is known by the address your proxy adds to `X-Forwarded-For`, so keep that header in the proxy block. After 50 failed attempts within 15 minutes from all visitors together, sign-in is refused to everyone for a while (open sessions keep working). If your proxy adds its own login, turn it off for this address (`auth_basic off;` with nginx).
+- The server only listens on `127.0.0.1`: it is reached through your reverse proxy, in HTTPS. A sign-in page protects every page. If your proxy adds its own login, turn it off for this address (`auth_basic off;` with nginx).
+- Security details:
+  - The session lasts 30 days, and changing the password signs everyone out.
+  - After 10 failed sign-ins from the same visitor within 15 minutes, that visitor is refused for a while. The visitor is known by the address your proxy adds to `X-Forwarded-For`: keep that header in the proxy block.
+  - After 50 failed sign-ins within 15 minutes from all visitors together, sign-in is refused to everyone for a while. Open sessions keep working.
 - The home page lists the latest dry runs. A dry run can only be applied once (an application that failed, for example while Plex was down, can be applied again), and not once a newer dry run replaces it (a full one covering the same libraries, or one proposing all the same changes): apply that one instead.
-- The notifications link to the page on the server (`REVIEW_URL`) instead of the file path.
+- The notifications link to the page on the server (`REVIEW_URL`) instead of the file path. An application started from the page sends its own notification ("N change(s) applied") and pings [Uptime Kuma](#monitoring-with-uptime-kuma).
 - The service is a systemd user service (Linux). On some servers, user services stop when you log out: if so, `loginctl enable-linger` (or your provider) keeps them running.
 - To change the login, password, port or address, run `configure.py --review-server` again: it restarts the service. To check the service: `systemctl --user status plex-smart-logo-review.service`.
 
@@ -308,7 +319,7 @@ To process titles by hand: `--rating-key 12345`, or `--process-queue` for the qu
 
 ### Monitoring with Uptime Kuma
 
-With `HEALTHCHECK_URL`, every scan (automatic, by hand or from the Tautulli queue) pings a monitoring service. It reports **up** when the run went fine, and **down** with the reason when it failed (token rejected, server unreachable, crash). If the automatic run stops altogether (broken cron, machine turned off…), the missing ping warns you.
+With `HEALTHCHECK_URL`, every scan (automatic, by hand or from the Tautulli queue) pings a monitoring service. It reports **up** when the run went fine, and **down** with the reason otherwise (token rejected, server unreachable, crash, or errors on some titles). If the automatic run stops altogether (broken cron, machine turned off…), the missing ping warns you.
 
 In [Uptime Kuma](https://github.com/louislam/uptime-kuma), go to **Add New Monitor > Push**. Copy the push URL into `HEALTHCHECK_URL`, or give it to `configure.py --notifications`. Then set the **heartbeat interval** a bit above your cron frequency, for example 8 days (691200 s) for a weekly run. A [healthchecks.io](https://healthchecks.io/) URL works too.
 
@@ -329,13 +340,13 @@ To redo a single step:
 | `configure.py --token` | Change **only the token**: it is prompted for, tested, then saved |
 | `configure.py --server` | Server address and token |
 | `configure.py --libraries` | Libraries to process |
-| `configure.py --language` | Logo language and Quebec posters |
+| `configure.py --language` | Logo language, Quebec posters and colored logos |
 | `configure.py --notifications` | Webhooks and Uptime Kuma |
 | `configure.py --cron` | Automatic run |
 | `configure.py --tautulli` | Queue processing for Tautulli in a container |
 | `configure.py --review-server` | [Review server](#review-and-apply-from-the-browser-optional) |
 
-A new token is only saved if Plex accepts it. **If your token changes**, the script stops with "Plex token rejected: change it with: .venv/bin/python configure.py --token", and also sends this message as a notification when run with `--notify`.
+A new token is only saved if Plex accepts it. **If your token changes**, the script stops with "Plex token rejected: change it with: .venv/bin/python configure.py --token", and also sends this message as a notification when run with `--notify` (once, until a run works again).
 
 ### Settings (`config.env`)
 
@@ -388,7 +399,9 @@ To use another settings file, set `PLEX_CONFIG` to its path (it is read by the s
 
 `--help` lists all the options.
 
-Be careful with `--replace`: on TMDB, a "French" logo is sometimes the Quebec version, and the OCR does not always catch it. That is why, by default, the script only replaces logos detected as Quebec ones.
+The exit code is 0 when the run went fine, 2 when some titles failed (see `[ERROR]` in the [logs](#logs)), and 1 when the run stopped (Plex unreachable, token rejected…).
+
+Be careful with `--replace`: on TMDB, a "French" logo is sometimes the Quebec version, and the OCR does not always catch it. That is why, by default, the script only replaces logos detected as Quebec ones, and white logos with a colored version of the same title.
 
 When applying, the script waits 2 s after each change and 10 s every 10 changes, to spare the server. Temporary errors (429, 5xx) are retried up to 4 times, except uploads, which are never sent twice.
 
@@ -398,17 +411,27 @@ When applying, the script waits 2 s after each change and 10 s every 10 changes,
 
 For each title **without a logo**, the script asks Plex's metadata service (`metadata.provider.plex.tv`, with your token) which logo it recommends: first in the library's language, then in English. It looks for that logo among the ones your server offers (same address, or identical image) and selects it. Only when your server does not have it is the logo uploaded to Plex from its Internet address.
 
-A title that already has a logo keeps it, unless that logo is a Quebec one or a white one with a colored version (below). A locked field *without* a logo gets a proposal like any other title without a logo. To keep it empty, reject the proposal: the title then goes to the ignore list.
+A title that already has a logo keeps it, unless that logo is a Quebec one or a white one with a colored version (below).
+
+An image selected by the script becomes **locked**, like a manual choice: Plex will not replace it on refresh, and later runs leave it alone. A locked field *without* a logo gets a proposal like any other title without a logo. To keep it empty, reject the proposal: the title then goes to the ignore list.
 
 ### Colored logos
 
-Plex often recommends the white or grey version of a logo. With `PLEX_PREFER_COLOR=yes` (the default), when the logo set or about to be set is white or grey, the script looks for a colored logo among the first 15 the server offers, and proposes it instead when it shows **the same title**, read with OCR. The language comes before the color: when the title in the library's language differs from the original title, a colored logo never replaces a white one showing the other title (in a German library, for example, a colored logo with the English title never replaces a white one with the German title). When the white logo shows only the title, colored logos with extra text (actor names, taglines) are left out. So are logos with many dark parts (black lettering hard to see on Plex's dark screens), and Quebec logos in French libraries. White logos already set are proposed for replacement too, unless they are locked (only `--replace --include-locked` touches locked logos). The first run after turning this on takes longer: the colors of the logos are measured once, then kept in the cache. These changes carry the **Colored** badge in the review page. Rejecting one puts the title on the [ignore list](#ignore-list), like any rejected change: its logo is then no longer checked at all, Quebec check included, until `--unignore`. Set `PLEX_PREFER_COLOR=no` to keep Plex's pick.
+Plex often recommends the white or grey version of a logo. With `PLEX_PREFER_COLOR=yes` (the default), when the logo set or about to be set is white or grey, the script looks for a colored logo among the first 15 the server offers, and proposes it instead when it shows **the same title**, read with OCR.
+
+- **The language comes before the color.** When the title in the library's language differs from the original title, a colored logo never replaces a white one showing the other title. In a German library, for example, a colored logo with the English title never replaces a white one with the German title.
+- **Some colored logos are left out:** those with extra text (actor names, taglines) when the white logo shows only the title, those with many dark parts (black lettering hard to see on Plex's dark screens), and Quebec logos in French libraries.
+- **White logos already set** are proposed for replacement too, unless they are locked (only `--replace --include-locked` touches locked logos).
+- **In the review page**, these changes carry the **Colored** badge. Rejecting one puts the title on the [ignore list](#ignore-list), like any rejected change: its logo is then no longer checked at all, Quebec check included, until `--unignore`.
+- The first run after turning this on takes longer: the colors of the logos are measured once, then kept in the cache.
+
+Set `PLEX_PREFER_COLOR=no` to keep Plex's pick.
 
 ### Quebec logo detection
 
 This only applies to French libraries: those whose first logo language is French, other than Quebec French (with a fixed `PLEX_LANGUAGES` such as `fr-FR,en-US`, every library). When the French (fr-FR) and Quebec (fr-CA) titles given by Plex differ, the script **reads the text on the logo** (OCR) and compares it with the French, Quebec and original titles.
 
-- **A Quebec logo set by Plex is replaced** with the best non-Quebec logo: the one closest to the full French title, otherwise to the original title. When several are equally close, it prefers, in this order: a logo without extra text (actor names, taglines; "Marvel Studios", "Disney"… are allowed), one in the same style as the replaced logo (colored or white), the one Plex recommends, then the largest one.
+- **A Quebec logo set by Plex is replaced** with the best non-Quebec logo: the one closest to the full French title, otherwise to the original title. When several are equally close, it prefers, in this order: a logo without extra text (actor names, taglines; "Marvel Studios", "Disney"… are allowed), one in the same style as the replaced logo (colored or white), the one Plex recommends, then the largest one. If the pick is white, a [colored version](#colored-logos) of it is then preferred.
 - **A Quebec logo is never added.** If Plex recommends one, the script looks for another.
 - When the French title differs from the original title and Plex's pick is not clearly French, the script looks for a logo with the French title (e.g. "HAPPY BIRTHDEAD" rather than "HAPPY DEATH DAY"). When France keeps the original title, Plex's pick is kept.
 - When Quebec keeps the original title (*Black Box Diaries*), a logo with that title is **not** a Quebec logo.
@@ -422,6 +445,8 @@ The detection is deliberately cautious: an existing logo is only replaced when i
 | `[FRENCH INFERRED]` | The French title is read on the logo, and the words specific to the Quebec title are missing (e.g. "PUSH" when Quebec says "Push : La division"). Very likely correct. |
 | `[ORIGINAL TITLE]` | The logo shows the original title, neither French nor Quebec (e.g. "HAPPY DEATH DAY" for *Happy Birthdead*). |
 | `[NOT VERIFIED]` | The OCR could not read the logo (very stylized font, spaced-out letters…). It is set anyway, as Plex would have done: **check it**. |
+
+A fourth mention, `[COLORED]`, only marks a [colored logo](#colored-logos) picked instead of a white one.
 
 The OCR readings are cached (`.cache-ocr.json`), so a new run only reads new images.
 
@@ -453,7 +478,7 @@ Each file starts with a header (date, mode, rules, legend) and ends with a summa
 | Tag | Meaning |
 |---|---|
 | `[TO ADD]` / `[ADDED]` | No logo yet: one will be / was set |
-| `[TO REPLACE]` / `[REPLACED]` | The current image (logo or poster) will be / was replaced (Quebec, or `--replace`) |
+| `[TO REPLACE]` / `[REPLACED]` | The current image (logo or poster) will be / was replaced (Quebec image, white logo with a colored version, or `--replace`) |
 | `[OK]` | Already the right logo (only with `--replace`) |
 | `[KEPT]` | A logo is already set: left alone |
 | `[LOCKED]` | Hand-picked image (locked field): left alone |
@@ -509,7 +534,6 @@ The OCR does not always read perfectly ("TRAIT" instead of "TRAIN"), but the com
 
 ## Good to know
 
-- An image selected by the script becomes **locked**, like a manual choice: Plex will not replace it on refresh, and later runs leave it alone.
 - Nothing is deleted: the previous logo or poster stays available in Plex (*Edit > Logo* or *Poster*). The only exception is undoing the addition of a logo to a title that had none.
 - Only the main movie or show images are handled, not those of seasons or episodes.
 - The installer replaces OpenCV 5, pulled in by the OCR engine, with an older build, because OpenCV 5 crashes on import on some machines.
@@ -517,7 +541,7 @@ The OCR does not always read perfectly ("TRAIT" instead of "TRAIN"), but the com
 
 ## Tests
 
-The tests are built from real cases (*Edge of Tomorrow*, *Bullet Train*, *The Banker*, *Captain America*, *Avatar*…). They cover the Quebec detection, posters, notifications, the ignore list, the setup wizard and the review server, and run without a Plex server or the OCR engine:
+The tests are built from real cases (*Edge of Tomorrow*, *Bullet Train*, *The Banker*, *Captain America*, *Avatar*…). They cover the Quebec detection, colored logos, posters, notifications, the ignore list, the setup wizard and the review server, and run without a Plex server or the OCR engine:
 
 ```bash
 .venv/bin/pip install pytest

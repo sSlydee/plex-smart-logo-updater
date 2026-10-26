@@ -49,6 +49,7 @@ import io
 import json
 import os
 import re
+import shlex
 import time
 import numpy as np
 import requests
@@ -144,16 +145,19 @@ def parse_args():
     p = argparse.ArgumentParser(
         description="Sets French logos on Plex (English as a fallback), without Quebec logos.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""examples:
-  plex-smart-logo-updater.py                          dry run (nothing is changed)
-  plex-smart-logo-updater.py --html                   dry run + review page review.html
-  plex-smart-logo-updater.py --apply --choices logs/<simulation>/choices.json
-                                           apply only what was approved in the review page
-  plex-smart-logo-updater.py --apply                  apply everything
-  plex-smart-logo-updater.py --undo logs/<application> [--apply]
-                                           undo an application (dry run without --apply)
-  plex-smart-logo-updater.py --ignore "Movies/Edge of Tomorrow"
-                                           never touch this title again (see --unignore)""")
+        epilog="""examples (from the project folder):
+  .venv/bin/python plex-smart-logo-updater.py
+      dry run (nothing is changed)
+  .venv/bin/python plex-smart-logo-updater.py --html
+      dry run + review page review.html
+  .venv/bin/python plex-smart-logo-updater.py --apply --choices logs/<simulation>/choices.json
+      apply only what was approved in the review page
+  .venv/bin/python plex-smart-logo-updater.py --apply
+      apply everything
+  .venv/bin/python plex-smart-logo-updater.py --undo logs/<application> [--apply]
+      undo an application (dry run without --apply)
+  .venv/bin/python plex-smart-logo-updater.py --ignore "Movies/Edge of Tomorrow"
+      never touch this title again (see --unignore)""")
     p.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     p.add_argument("--apply", action="store_true", help="actually change Plex (otherwise: dry run)")
     p.add_argument("--html", action="store_true",
@@ -739,6 +743,21 @@ class Log:
 
 def safe_filename(name):
     return "".join("_" if c in '\\/:*?"<>|' else c for c in name).strip()
+
+
+def script_command(*args):
+    """
+    The command to run the script again, ready to copy and paste from any folder: with
+    its Python environment (the script is not executable on its own) and paths relative
+    to the project folder when they are inside it.
+    """
+    def shown(arg):
+        if os.path.isabs(arg) and os.path.commonpath([HERE, os.path.abspath(arg)]) == HERE:
+            arg = os.path.relpath(arg, HERE)
+        return shlex.quote(arg)
+    venv = os.path.join(HERE, ".venv", "bin", "python")
+    python = ".venv/bin/python" if os.path.exists(venv) else shlex.quote(sys.executable)
+    return f"cd {shlex.quote(HERE)} && {python} plex-smart-logo-updater.py " + " ".join(shown(a) for a in args)
 
 
 def minutes(seconds):
@@ -1674,12 +1693,12 @@ def run(opts):
             summary(f"  Online     : {review_link(run_dir)}")
         if not opts.apply and to_do:
             summary("  Open it, approve or reject each change, then export choices.json and run:")
-            summary(f"    plex-smart-logo-updater.py --apply --choices {os.path.join(run_dir, 'choices.json')}")
+            summary(f"    {script_command('--apply', '--choices', os.path.join(run_dir, 'choices.json'))}")
     elif ctx.html is not None:
         summary("  Review page: not generated, there is nothing to review.")
     if opts.apply:
         if to_do:
-            summary(f"  To undo everything: plex-smart-logo-updater.py --undo {run_dir} --apply")
+            summary(f"  To undo everything: {script_command('--undo', run_dir, '--apply')}")
     elif to_do:
         summary("  Dry run only: run again with --apply to apply.")
     else:
@@ -2029,7 +2048,7 @@ def undo(opts):
     for t in errors:
         log(f"    - error: {t}")
     if not opts.apply:
-        log(f"  Dry run only: run again with --undo {opts.undo} --apply to restore.")
+        log(f"  Dry run only, to restore: {script_command('--undo', opts.undo, '--apply')}")
     log(LINE)
     log.close()
     return ERRORS if errors else OK
