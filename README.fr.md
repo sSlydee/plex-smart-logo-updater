@@ -415,7 +415,7 @@ Pour chaque titre **sans logo**, le script demande au service de métadonnées d
 
 Un titre qui a déjà un logo le garde, sauf si ce logo est québécois, ou blanc avec une version en couleur (voir ci-dessous).
 
-Une image choisie par le script devient **verrouillée**, comme un choix manuel : Plex ne la remplace pas lors d'une actualisation, et les analyses suivantes n'y touchent plus. Un champ verrouillé *sans* logo reçoit une proposition comme n'importe quel titre sans logo. Pour le laisser vide, refusez la proposition : le titre rejoint alors les titres ignorés.
+Une image choisie par le script devient **verrouillée**, comme un choix manuel : Plex ne la remplace pas lors d'une actualisation, et les analyses suivantes n'y touchent plus, sauf pour proposer sa [version en couleur](#logos-en-couleur). Un champ verrouillé *sans* logo reçoit une proposition comme n'importe quel titre sans logo. Pour le laisser vide, refusez la proposition : le titre rejoint alors les titres ignorés.
 
 ### Logos en couleur
 
@@ -423,7 +423,7 @@ Plex recommande souvent la version blanche ou grise d'un logo. Avec `PLEX_PREFER
 
 - **La langue passe avant la couleur.** Quand le titre dans la langue de la bibliothèque diffère du titre original, un logo en couleur ne remplace jamais un logo blanc qui affiche l'autre titre. Dans une bibliothèque française, par exemple, un logo en couleur avec le titre anglais ne remplace jamais un logo blanc avec le titre français.
 - **Certains logos en couleur sont écartés :** ceux avec du texte en plus (noms d'acteurs, slogans) quand le logo blanc n'affiche que le titre, ceux avec beaucoup de parties sombres (lettres noires peu visibles sur les écrans sombres de Plex), et les logos québécois dans les bibliothèques françaises.
-- **Les logos blancs déjà en place** sont eux aussi proposés au remplacement, sauf s'ils sont verrouillés (seul `--replace --include-locked` touche aux logos verrouillés).
+- **Les logos blancs déjà en place** sont eux aussi proposés au remplacement, y compris ceux que le script a posés et verrouillés lui-même : ses journaux d'annulation (`undo.json`) permettent de les reconnaître. Un logo que vous avez choisi à la main reste intouché, sauf avec `--replace --include-locked`.
 - **Dans la page de contrôle**, ces changements portent le badge **Colored**. En refuser un met le titre dans les [titres ignorés](#titres-ignorés), comme tout changement refusé : son logo n'est alors plus vérifié du tout, détection québécoise comprise, jusqu'à `--unignore`.
 - Le premier lancement après l'activation est plus long : les couleurs des logos sont mesurées une fois, puis gardées en cache.
 

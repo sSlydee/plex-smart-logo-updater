@@ -300,3 +300,48 @@ def test_concurrent_runs_merge_their_cache_entries(main, monkeypatch, tmp_path):
     waiting.save()
     saved = main.OcrCache(path).data["k"]
     assert saved["text"] == "SAW" and saved["dark"] == 0.0 and saved["color"] == 0.8
+
+
+# --- locked logos set by the script ------------------------------------------------
+
+def journal(main, tmp_path, folder, entries, name="undo.json"):
+    path = tmp_path / "logs" / folder
+    path.mkdir(parents=True, exist_ok=True)
+    (path / name).write_text(main.json.dumps({"entries": entries}))
+
+
+def test_script_set_logos_reads_every_journal_oldest_first(main, tmp_path):
+    journal(main, tmp_path, "2026-09-23_20h13m28_application", [{"ratingKey": 7, "after": "old"}], "annulation.json")
+    journal(main, tmp_path, "2026-10-01_10h00m00_application", [{"ratingKey": 7, "after": "new"},
+                                                                {"ratingKey": 8, "after": "p", "asset": "poster"},
+                                                                {"ratingKey": 9, "after": None}])
+    journal(main, tmp_path, "2026-10-02_10h00m00_simulation", [{"ratingKey": 9, "after": "x"}])
+    (tmp_path / "logs" / "2026-10-03_10h00m00_application").mkdir()
+    (tmp_path / "logs" / "2026-10-03_10h00m00_application" / "undo.json").write_text("not json")
+    assert main.script_set_logos(str(tmp_path / "logs")) == {"7": "new"}
+
+
+def test_a_locked_white_logo_set_by_the_script_gives_way(main, fake, monkeypatch):
+    """The script locks the logos it sets: its own white logos would never get a colored version."""
+    monkeypatch.setattr(main, "_SCRIPT_LOGOS", {"7": "white#1"})
+    logos = [FakeLogo("white#1", selected=True), FakeLogo("color#2")]
+    plan = main.plan_item(None, FakeItem(logos, locked=True), logos, lambda *a: None, opts(), ["fr-FR"])
+    assert (plan.category, plan.index, plan.colored, plan.locked) == ("replace", 1, True, True)
+    assert "(locked, set by this script)" in plan.detail
+
+
+def test_a_locked_logo_picked_by_hand_is_never_touched(main, fake, monkeypatch):
+    """Changed by hand after the script set another one: the journal no longer matches."""
+    monkeypatch.setattr(main, "_SCRIPT_LOGOS", {"7": "white#9"})
+    logos = [FakeLogo("white#1", selected=True), FakeLogo("color#2")]
+    plan = main.plan_item(None, FakeItem(logos, locked=True), logos, lambda *a: None, opts(), ["fr-FR"])
+    assert plan.category == "locked"
+    monkeypatch.setattr(main, "_SCRIPT_LOGOS", {})  # no journal at all: every locked logo is protected
+    assert main.plan_item(None, FakeItem(logos, locked=True), logos, lambda *a: None, opts(), ["fr-FR"]).category == "locked"
+
+
+def test_a_locked_script_logo_stays_locked_without_the_option(main, fake, monkeypatch):
+    monkeypatch.setattr(main, "_SCRIPT_LOGOS", {"7": "white#1"})
+    monkeypatch.setattr(main, "PREFER_COLOR", False)
+    logos = [FakeLogo("white#1", selected=True), FakeLogo("color#2")]
+    assert main.plan_item(None, FakeItem(logos, locked=True), logos, lambda *a: None, opts(), ["fr-FR"]).category == "locked"

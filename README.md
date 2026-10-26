@@ -413,7 +413,7 @@ For each title **without a logo**, the script asks Plex's metadata service (`met
 
 A title that already has a logo keeps it, unless that logo is a Quebec one or a white one with a colored version (below).
 
-An image selected by the script becomes **locked**, like a manual choice: Plex will not replace it on refresh, and later runs leave it alone. A locked field *without* a logo gets a proposal like any other title without a logo. To keep it empty, reject the proposal: the title then goes to the ignore list.
+An image selected by the script becomes **locked**, like a manual choice: Plex will not replace it on refresh, and later runs leave it alone, except to offer its [colored version](#colored-logos). A locked field *without* a logo gets a proposal like any other title without a logo. To keep it empty, reject the proposal: the title then goes to the ignore list.
 
 ### Colored logos
 
@@ -421,7 +421,7 @@ Plex often recommends the white or grey version of a logo. With `PLEX_PREFER_COL
 
 - **The language comes before the color.** When the title in the library's language differs from the original title, a colored logo never replaces a white one showing the other title. In a German library, for example, a colored logo with the English title never replaces a white one with the German title.
 - **Some colored logos are left out:** those with extra text (actor names, taglines) when the white logo shows only the title, those with many dark parts (black lettering hard to see on Plex's dark screens), and Quebec logos in French libraries.
-- **White logos already set** are proposed for replacement too, unless they are locked (only `--replace --include-locked` touches locked logos).
+- **White logos already set** are proposed for replacement too, including those the script set and locked itself: its undo journals (`undo.json`) tell them apart. A logo you picked by hand stays untouched, unless you run `--replace --include-locked`.
 - **In the review page**, these changes carry the **Colored** badge. Rejecting one puts the title on the [ignore list](#ignore-list), like any rejected change: its logo is then no longer checked at all, Quebec check included, until `--unignore`.
 - The first run after turning this on takes longer: the colors of the logos are measured once, then kept in the cache.
 

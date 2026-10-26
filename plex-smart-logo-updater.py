@@ -796,7 +796,8 @@ def write_header(log, title, opts, extra=(), languages=None):
     if PREFER_COLOR:
         log("    3. Colors: a white/grey logo (set or about to be) gives way to a colored logo")
         log("       showing the same title (OCR), when one exists"
-            + ("." if opts.replace and opts.include_locked else "; locked logos are kept."))
+            + ("." if opts.replace and opts.include_locked
+               else "; a locked logo is only replaced when this script set it."))
         rule += 1
     log(f"    {rule}. When the Quebec title differs from the French title, the logo is read (OCR):")
     log("       a Quebec logo is never set, and a Quebec logo set by Plex is replaced")
@@ -891,6 +892,7 @@ class Plan:
         self.asset = LOGO         # LOGO or POSTER
         self.key = None           # key in choices.json: "<ratingKey>" or "<ratingKey>:poster"
         self.colored = False      # a colored logo replaces a white/grey one (PLEX_PREFER_COLOR)
+        self.script_locked = False  # ...a locked one this script set itself (not picked by hand)
 
     @property
     def target_id(self):
@@ -899,6 +901,49 @@ class Plan:
     @property
     def is_change(self):
         return self.category in ("add", "replace")
+
+
+_SCRIPT_LOGOS = None
+
+
+def script_set_logos(logs_dir=None):
+    """
+    {ratingKey: logo key} of the logo this script set last on each title, from the undo
+    journals of the applications (undo.json, or annulation.json for the oldest ones). The
+    script locks the logos it sets: this tells them apart from logos picked by hand.
+    Read once per run (the journals of the run itself do not matter).
+    """
+    global _SCRIPT_LOGOS
+    if _SCRIPT_LOGOS is not None and logs_dir is None:
+        return _SCRIPT_LOGOS
+    root = logs_dir or LOGS_DIR
+    found = {}
+    try:
+        names = sorted(os.listdir(root))  # the folder names start with the date: oldest first
+    except OSError:
+        names = []
+    for name in names:
+        if not name.endswith("_application"):
+            continue
+        for journal in ("undo.json", "annulation.json"):
+            try:
+                with open(os.path.join(root, name, journal), encoding="utf-8") as f:
+                    entries = json.load(f).get("entries", [])
+            except (OSError, ValueError, AttributeError):
+                continue
+            for e in entries:
+                if isinstance(e, dict) and e.get("asset", LOGO.name) == LOGO.name and e.get("after") \
+                        and e.get("ratingKey") is not None:
+                    found[str(e["ratingKey"])] = e["after"]
+            break
+    if logs_dir is None:
+        _SCRIPT_LOGOS = found
+    return found
+
+
+def set_by_script(item, logo):
+    """True when this logo is the one the script set last on the title (not one picked by hand)."""
+    return logo is not None and script_set_logos().get(str(item.ratingKey)) == logo.ratingKey
 
 
 def keeps_locked_logo(plan, opts):
@@ -952,6 +997,13 @@ def plan_item(plex, item, logos, log, opts, languages):
         log(f"  Logo reads       : \"{text}\" -> {v}")
 
     if keeps_locked_logo(plan, opts):
+        # The script locks the logos it sets: a white one it set (not one picked by hand) may
+        # still give way to a colored version
+        if not plan.current_is_qc and set_by_script(item, plan.current) and \
+                prefer_colored(plex, item, plan, logos, plan.current, languages, log):
+            log("  Note             : the locked logo was set by this script, not picked by hand")
+            plan.script_locked = True
+            return finish_plan(plan)
         plan.category = "locked"
         plan.detail = "left untouched"
         if plan.current_is_qc:
@@ -1050,7 +1102,8 @@ def finish_plan(plan):
     plan.category = "replace" if plan.current is not None else "add"
     plan.detail = plan.chosen
     if plan.current is not None:
-        plan.detail += f", instead of #{plan.current_index + 1}" + (" (Quebec)" if plan.current_is_qc else "")
+        plan.detail += f", instead of #{plan.current_index + 1}" + (" (Quebec)" if plan.current_is_qc else "") \
+            + (" (locked, set by this script)" if plan.script_locked else "")
     if plan.mention:
         plan.detail += f"  [{MENTIONS[plan.mention][0]}]"
     return plan
