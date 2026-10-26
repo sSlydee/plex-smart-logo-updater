@@ -402,7 +402,8 @@ class OcrCache:
         self.misses += 1
         img = fetch_image(plex, logo_or_url)
         text = quebec.read_text(img, poster=poster)
-        self.data[key] = {"text": text, "w": img.width, "h": img.height, "v": quebec.OCR_VERSION}
+        # Measures taken before the reading (color, dark share) are kept
+        self.data[key] = dict(entry or {}, text=text, w=img.width, h=img.height, v=quebec.OCR_VERSION)
         if not poster:
             self.data[key]["color"] = colorfulness(img)
         self.dirty = True
@@ -548,9 +549,10 @@ def best_french_candidate(plex, logos, titles, exclude=(), plex_picks=(), curren
 def colored_alternative(plex, logos, chosen, titles, quebec_titles=None, exclude=()):
     """
     A colored logo showing the same title as chosen, when chosen is white or grey.
-    titles = (title in the library's language, original title): the title shown by
-    chosen is found by OCR, and a candidate must show that one, not the other (the
-    language comes before the color). quebec_titles (French, Quebec, original), when
+    titles = (title in the library's language, original title), or a function returning
+    them (only called when a colored candidate exists): the title shown by chosen is
+    found by OCR, and a candidate must show that one, not the other (the language
+    comes before the color). quebec_titles (French, Quebec, original), when
     a Quebec logo is possible: Quebec candidates are left out.
     Returns (index, logo, text read) or (None,) * 3.
     """
@@ -569,6 +571,8 @@ def colored_alternative(plex, logos, chosen, titles, quebec_titles=None, exclude
             continue
     if not colored:
         return none
+    if callable(titles):
+        titles = titles()
     text, _ = OCR.read(plex, chosen)
     names = [t for t in dict.fromkeys(titles) if t]
     scores = [quebec.title_similarity(t, text) for t in names]
@@ -764,7 +768,8 @@ def write_header(log, title, opts, extra=(), languages=None):
     rule = 3
     if PREFER_COLOR:
         log("    3. Colors: a white/grey logo (set or about to be) gives way to a colored logo")
-        log("       showing the same title (OCR), when one exists; locked logos are kept.")
+        log("       showing the same title (OCR), when one exists"
+            + ("." if opts.replace and opts.include_locked else "; locked logos are kept."))
         rule += 1
     log(f"    {rule}. When the Quebec title differs from the French title, the logo is read (OCR):")
     log("       a Quebec logo is never set, and a Quebec logo set by Plex is replaced")
@@ -858,6 +863,7 @@ class Plan:
         self.chosen = ""          # description of the chosen logo
         self.asset = LOGO         # LOGO or POSTER
         self.key = None           # key in choices.json: "<ratingKey>" or "<ratingKey>:poster"
+        self.colored = False      # a colored logo replaces a white/grey one (PLEX_PREFER_COLOR)
 
     @property
     def target_id(self):
@@ -1003,9 +1009,11 @@ def plan_item(plex, item, logos, log, opts, languages):
         plan.chosen = f"{lang_name(plan.language)} logo {fmt_size(target_size)} px"
 
     chosen = plan.candidate if plan.candidate is not None else plan.target_url
+    mention = plan.mention
     if prefer_colored(plex, item, plan, logos, chosen, languages, log) and plan.index == plan.current_index:
         plan.category = "ok"
         plan.detail = "the current logo is already a colored one showing the same title"
+        plan.mention, plan.colored = mention, False  # nothing changes: not counted as a colored logo
         return plan
     return finish_plan(plan)
 
@@ -1031,7 +1039,7 @@ def prefer_colored(plex, item, plan, logos, chosen, languages, log):
     exclude = {plan.current_index} if plan.current_is_qc else set()
     quebec_titles = plan.titles if plan.titles[0] else None
     try:
-        index, logo, text = colored_alternative(plex, logos, chosen, library_titles(item, plan, languages),
+        index, logo, text = colored_alternative(plex, logos, chosen, lambda: library_titles(item, plan, languages),
                                                 quebec_titles, exclude)
     except TokenError:
         raise
@@ -1041,6 +1049,7 @@ def prefer_colored(plex, item, plan, logos, chosen, languages, log):
     if logo is None:
         return False
     plan.index, plan.candidate, plan.target_url = index, logo, None
+    plan.colored = True
     plan.chosen = f"colored logo \"{text}\""
     if plan.mention is None:
         plan.mention = "colored"
@@ -1250,10 +1259,13 @@ def process_library(plex, section, log, opts, ctx, languages, items=None):
             note = lang_name(plan.language) if plan.language and plan.chosen.startswith(lang_name(plan.language) + " logo") \
                 else "picked by OCR"
             if plan.current_is_qc:
-                note += ", replaces a Quebec logo"
+                note += ", " + QUEBEC_NOTE
         results[result(plan.category)].append(f"{label} ({note})")
         if plan.mention and not is_poster:
             results[plan.mention].append(label)
+        # Counted even when the plan carries another mention ("original title"...)
+        if plan.colored and plan.mention != "colored" and plan.is_change:
+            results["colored"].append(label)
 
         if not opts.apply:
             ctx.pending[plan.key] = plan.target_id
@@ -1820,22 +1832,33 @@ def new_pending_changes(pending, state_path, targeted, save=True):
     return new if targeted else dict(pending)
 
 
-def colored_replacements(totals):
-    """Replacements of a white logo with a colored one (the others replace a Quebec logo)."""
+QUEBEC_NOTE = "replaces a Quebec logo"
+
+
+def replacement_kinds(totals):
+    """
+    What each replacement replaces: "quebec" (a Quebec logo), "colored" (a white/grey
+    logo, with a colored one) or "other" (--replace). {entry: kind}, entries of totals["replace"].
+    """
     colored = set(totals["colored"])
-    # Entries end with a note in parentheses ("(English)", "(picked by OCR…)"), the mentions do not
-    return [entry for entry in totals["replace"] if entry.rsplit(" (", 1)[0] in colored]
+    kinds = {}
+    for entry in totals["replace"]:
+        # Entries end with a note in parentheses ("(English)", "(picked by OCR…)"), the mentions do not
+        label, _, note = entry.rpartition(" (")
+        kinds[entry] = "quebec" if QUEBEC_NOTE in note else "colored" if label in colored else "other"
+    return kinds
 
 
 def change_titles(totals, applied, limit=5):
     """Titles of the changes, for the notification: "Films > Real Steel (2011): logo to add"."""
-    colored = colored_replacements(totals)
-    kinds = [("add", "logo added" if applied else "logo to add"),
-             ("replace", "Quebec logo replaced" if applied else "Quebec logo to replace"),
-             ("poster_replace", "Quebec poster replaced" if applied else "Quebec poster to replace")]
-    colored_what = "colored logo set" if applied else "colored logo to set"
-    items = [f"{entry.rsplit(' (', 1)[0]}: {colored_what if key == 'replace' and entry in colored else what}"
-             for key, what in kinds for entry in totals[key]]
+    replaced = replacement_kinds(totals)
+    words = {"add": "logo added" if applied else "logo to add",
+             "quebec": "Quebec logo replaced" if applied else "Quebec logo to replace",
+             "colored": "colored logo set" if applied else "colored logo to set",
+             "other": "logo replaced" if applied else "logo to replace",
+             "poster_replace": "Quebec poster replaced" if applied else "Quebec poster to replace"}
+    items = [f"{entry.rsplit(' (', 1)[0]}: {words[replaced[entry] if key == 'replace' else key]}"
+             for key in ("add", "replace", "poster_replace") for entry in totals[key]]
     if len(items) > limit:
         items = items[:limit] + [f"… and {len(items) - limit} more"]
     return items
@@ -1875,11 +1898,13 @@ def notify(opts, run_dir, totals, page, duration, pending=None):
     title = f"Plex logos: {to_do} change(s) {verb}" if to_do else "Plex logos: titles to handle by hand"
     lines = []
     if to_do:
-        colored = len(colored_replacements(totals))
+        replaced = list(replacement_kinds(totals).values())
         done = "replaced" if opts.apply else "to replace"
-        line = f"{len(totals['add'])} addition(s), {len(totals['replace']) - colored} Quebec logo(s) {done}"
-        if colored:
-            line += f", {colored} white logo(s) {done} with a colored one"
+        line = f"{len(totals['add'])} addition(s), {replaced.count('quebec')} Quebec logo(s) {done}"
+        if "colored" in replaced:
+            line += f", {replaced.count('colored')} white logo(s) {done} with a colored one"
+        if "other" in replaced:
+            line += f", {replaced.count('other')} other logo(s) {done}"
         if totals["poster_replace"]:
             line += f", {len(totals['poster_replace'])} Quebec poster(s) {done}"
         lines.append(line)
@@ -1898,13 +1923,13 @@ def notify(opts, run_dir, totals, page, duration, pending=None):
         lines.append(f"Review page: {review_link(run_dir)}")
     lines.append(f"Logs: {os.path.basename(run_dir.rstrip('/'))} ({minutes(duration)})")
     body = "\n".join(lines)
-    # Discord: the review link stays out of code formatting, or it could not be clicked
-    # Discord: titles are escaped ("Thunderbolts*" is not formatting); the review link is
-    # wrapped in <> (clickable, without a preview of the sign-in page)
-    markdown = "\n".join(f"`{l}`" if l.startswith("Logs")
-                         else f"Review page: <{review_link(run_dir)}>" if l.startswith("Review page")
-                         else f"• {notifier.escape_markdown(l)}" for l in lines)
+    # Discord: titles are escaped ("Thunderbolts*" is not formatting); the review link stays out
+    # of code formatting, wrapped in <> (clickable, without a preview of the sign-in page)
     link = review_link(run_dir) if page and not opts.apply and to_do else None
+    web_link = link if link and link.startswith(("http://", "https://")) else None
+    markdown = "\n".join(f"`{l}`" if l.startswith("Logs")
+                         else (f"Review page: <{web_link}>" if web_link else f"`{l}`") if l.startswith("Review page")
+                         else f"• {notifier.escape_markdown(l)}" for l in lines)
     results = notifier.send(HTTP, NOTIFY_TARGETS, title, body, markdown, link=link)
     for kind, error in results:
         print(f"Notification {kind}: {'sent' if error is None else 'failed (' + error + ')'}")

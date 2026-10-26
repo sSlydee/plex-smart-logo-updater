@@ -643,6 +643,40 @@ def test_notification_wording_titles_and_errors(main, monkeypatch, tmp_path):
     assert sent["link"] is None  # an application has nothing to review
 
 
+def test_each_replacement_is_named_by_what_it_replaces(main):
+    """Regression: a colored logo with another mention was reported as a Quebec logo, a Quebec logo
+    replaced with a colored one as a white logo, and a --replace change as a Quebec logo."""
+    totals = main.empty_results()
+    totals["replace"] = ["Films > A (2020) (picked by OCR, replaces a Quebec logo)",
+                         "Films > B (2021) (French)", "Films > C (2022) (French)"]
+    totals["colored"] = ["Films > A (2020)", "Films > B (2021)"]
+    assert main.replacement_kinds(totals) == {totals["replace"][0]: "quebec", totals["replace"][1]: "colored",
+                                              totals["replace"][2]: "other"}
+    assert main.change_titles(totals, applied=False) == [
+        "Films > A (2020): Quebec logo to replace", "Films > B (2021): colored logo to set",
+        "Films > C (2022): logo to replace"]
+
+
+def test_a_local_review_page_stays_in_code_formatting_on_discord(main, monkeypatch, tmp_path):
+    """Without REVIEW_URL the review page is a file: no <> around it, and no link for Bark."""
+    import argparse
+    sent = {}
+
+    def send(session, targets, title, body, markdown=None, link=None):
+        sent.update(markdown=markdown, link=link)
+        return [("discord", None)]
+    monkeypatch.setattr(main.notifier, "send", send)
+    monkeypatch.setattr(main, "LOGS_DIR", str(tmp_path))
+    monkeypatch.setattr(main, "NOTIFY_TARGETS", [("discord", "https://d/x")])
+    monkeypatch.setattr(main, "REVIEW_URL", "")
+    totals = main.empty_results()
+    totals["add"] = ["Films > Saw (2004) (French)"]
+    main.notify(argparse.Namespace(apply=False, rating_keys=None, choices=None), str(tmp_path / "run"), totals,
+                "page", 1.0, {"1": "a"})
+    page = os.path.join(str(tmp_path / "run"), "review.html")
+    assert f"`Review page: {page}`" in sent["markdown"].splitlines()
+
+
 def test_a_failed_failure_alert_is_sent_again(main, tmp_path):
     state = str(tmp_path / "failure.json")
     assert main.failure_is_new("down", state, save=False) is True

@@ -188,3 +188,15 @@ def test_a_local_review_page_is_not_sent_as_a_link():
     session = FakeSession()
     notify.send(session, [("bark", "https://b/KEY")], "Title", "Body", link="/home/me/logs/run/review.html")
     assert "url" not in session.calls[0][1]
+
+
+def test_a_read_timeout_is_not_tried_again(monkeypatch):
+    """Regression: a read timeout was tried again, though the message may have arrived (sent twice)."""
+    import requests
+    monkeypatch.setattr(notify.time, "sleep", lambda s: None)
+    session = FlakySession(requests.ReadTimeout("read timed out"))
+    [(kind, error)] = notify.send(session, [("discord", "https://d/x")], "Title", "Body")
+    assert error and session.calls == 1
+    session = FlakySession(requests.ConnectTimeout("connect timed out"))
+    assert notify.send(session, [("discord", "https://d/x")], "Title", "Body") == [("discord", None)]
+    assert session.calls == 2

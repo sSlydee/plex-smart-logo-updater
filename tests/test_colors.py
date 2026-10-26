@@ -171,3 +171,65 @@ def test_colors_of_unread_logos_are_cached(main, monkeypatch, tmp_path):
     assert again.dark(None, "https://x/logo.png") == 0.0
     assert len(fetched) == 2  # once per measure, then never again
     assert q.OCR_VERSION != again.data["https://x/logo.png"].get("v")  # the OCR reading is still to do
+
+
+# --- plan_item paths with a recommended logo or a Quebec logo ----------------------
+
+def plan_with(main, monkeypatch, logos, recommended=None, quebec_titles=None, same=False, found=None, **kw):
+    """plan_item with Plex's recommendation and image comparisons faked."""
+    monkeypatch.setattr(main, "recommended_logo", lambda item, lang: recommended)
+    monkeypatch.setattr(main, "quebec_titles", lambda item, languages: quebec_titles)
+    monkeypatch.setattr(main, "image_size", lambda plex, image: (1000, 300))
+    monkeypatch.setattr(main, "fetch_image", lambda plex, image: None)
+    monkeypatch.setattr(main, "same_image", lambda a, b: same)
+    monkeypatch.setattr(main, "find_candidate", lambda plex, logos, url, size: found or (None, None, "none"))
+    return main.plan_item(None, FakeItem(logos), logos, lambda *a: None, opts(**kw), ["fr-FR", "en-US"])
+
+
+def test_a_white_current_logo_equal_to_the_recommended_one_gives_way(main, fake, monkeypatch):
+    """The 'already the recommended logo' branch (with --replace) still prefers a colored logo."""
+    logos = [FakeLogo("white#1", selected=True), FakeLogo("color#2")]
+    plan = plan_with(main, monkeypatch, logos, recommended="white#url", same=True, replace=True)
+    assert (plan.category, plan.index, plan.colored) == ("replace", 1, True)
+
+
+def test_a_colored_current_logo_is_kept_when_the_recommended_one_is_white(main, fake, monkeypatch):
+    logos = [FakeLogo("white#1"), FakeLogo("color#2", selected=True)]
+    plan = plan_with(main, monkeypatch, logos, recommended="white#url", found=(0, logos[0], "same URL"),
+                     replace=True)
+    assert plan.category == "ok"
+    assert (plan.colored, plan.mention) == (False, None)  # nothing changes: not counted as colored
+
+
+def test_a_quebec_logo_is_replaced_with_a_colored_french_one(main, fake, monkeypatch):
+    titles = ("Retour vers le futur", "Retour dans le futur", "Back to the Future")
+    LOGOS["qc"] = ("RETOUR DANS LE FUTUR", 0.0)
+    try:
+        assert q.verdict(LOGOS["qc"][0], *titles)[0] == q.QC
+        logos = [FakeLogo("qc#1", selected=True), FakeLogo("white#2"), FakeLogo("color#3")]
+        plan = plan_with(main, monkeypatch, logos, quebec_titles=titles)
+        assert (plan.category, plan.index, plan.current_is_qc, plan.colored) == ("replace", 2, True, True)
+    finally:
+        del LOGOS["qc"]
+
+
+def test_titles_are_only_asked_when_a_colored_candidate_exists(main, fake, monkeypatch):
+    """Regression: the two titles were asked to Plex's metadata service for every title with a logo."""
+    asked = []
+    monkeypatch.setattr(main, "library_titles", lambda *a: asked.append(1) or TITLES)
+    logos = [FakeLogo("white#1", selected=True), FakeLogo("pale#2")]
+    assert main.plan_item(None, FakeItem(logos), logos, lambda *a: None, opts(), ["fr-FR"]).category == "kept"
+    logos = [FakeLogo("color#1", selected=True), FakeLogo("color#2")]
+    assert main.plan_item(None, FakeItem(logos), logos, lambda *a: None, opts(), ["fr-FR"]).category == "kept"
+    assert asked == []
+
+
+def test_an_ocr_reading_keeps_the_measures_already_cached(main, monkeypatch, tmp_path):
+    """Regression: reading a logo by OCR dropped its dark share, measured before."""
+    from PIL import Image
+    monkeypatch.setattr(main, "fetch_image", lambda plex, image: Image.new("RGBA", (10, 10), (200, 30, 30, 255)))
+    monkeypatch.setattr(main.quebec, "read_text", lambda img, poster=False: "SAW")
+    cache = main.OcrCache(str(tmp_path / "cache.json"))
+    cache.dark(None, "https://x/logo.png")
+    cache.read(None, "https://x/logo.png")
+    assert "dark" in cache.data["https://x/logo.png"] and cache.data["https://x/logo.png"]["text"] == "SAW"

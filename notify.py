@@ -139,7 +139,8 @@ def send(session, targets, title, body, markdown_body=None, link=None):
 
 def retry_wait(error):
     """Seconds to wait before trying again, or None when trying again is pointless (e.g. a 404)."""
-    if isinstance(error, (requests.ConnectionError, requests.Timeout)):
+    # Not a read timeout: the message may have arrived, and would be sent twice
+    if isinstance(error, requests.ConnectionError):  # includes ConnectTimeout
         return 5
     response = getattr(error, "response", None)
     if response is None or response.status_code not in RETRY_STATUSES:
